@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+build/
+app/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Android
+local.properties
+*.jks
+*.keystore
+keystore.properties
+
+# Logs / temp
+*.log
+tools/aar_inspect/
+tools/model_forensics/.probe_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local/tool caches
+.kotlin/
+.freebuff/
+
+tools/*.txt
+tools/ui.xml
+
+tools/gradle-dist/
+tools/cmdline-tools.zip

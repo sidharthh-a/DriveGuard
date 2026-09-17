@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DriveGuard</string>
+    <string name="notif_channel_name">Monitoring</string>
+    <string name="notif_channel_desc">Shows when drowsiness monitoring is active</string>
+    <string name="notif_monitoring_title">DriveGuard monitoring</string>
+    <string name="notif_monitoring_text">Watching for signs of drowsiness — tap to return</string>
+<string name="pip_action_stop">Stop monitoring</string>
+</resources>
