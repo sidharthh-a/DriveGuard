@@ -43,6 +43,13 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // LiteRT 1.0.1 ships a 4 KB-aligned x86_64 JNI library, which Play
+            // rejects for apps targeting API 35+ on 16 KB-page devices. Ship
+            // the 64-bit ARM ABI (every phone) plus 32-bit ARM; debug builds
+            // keep all ABIs so x86_64 emulators still install.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -72,6 +79,9 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+            // Robolectric's FileDescriptor interceptor reaches into
+            // jdk.internal.access on JDK 17+, which is not exported by default.
+            all { it.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
         }
     }
     packaging {

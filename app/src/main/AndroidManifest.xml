@@ -12,9 +12,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+        com.google.android.datatransport:transport-backend-cct (pulled in
+        transitively by ML Kit) declares these; the app itself never touches the
+        network and the ML Kit face model is bundled, so they are stripped to
+        keep the "no network permission" privacy promise true in the shipped
+        artifact.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
     <application
         android:name=".DriveGuardApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

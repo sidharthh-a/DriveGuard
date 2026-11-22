@@ -4,6 +4,9 @@ import android.app.Application
 import com.driveguard.app.data.AppDatabase
 import com.driveguard.app.data.SessionRepository
 import com.driveguard.app.data.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Minimal manual DI: one Application-scoped instance of each repository.
@@ -15,6 +18,12 @@ class DriveGuardApplication : Application() {
         private set
     lateinit var sessionRepository: SessionRepository
         private set
+
+    /**
+     * Work that must survive a cleared ViewModel — e.g. persisting a session
+     * record when the user leaves the app immediately after stopping.
+     */
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()

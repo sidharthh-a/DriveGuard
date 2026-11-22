@@ -53,6 +53,11 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
     private var classifier: EyeStateClassifier? = null
     private var analyzer: DrowsinessFrameAnalyzer? = null
     private var alertPlayer: AlertPlayer? = null
+
+    /** Test-only window onto the player lifetime (see MonitoringViewModelLifecycleTest). */
+    @androidx.annotation.VisibleForTesting
+    internal val activeAlertPlayer: AlertPlayer?
+        get() = alertPlayer
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -81,7 +86,6 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
                 onModelReady(false)
             }
         }
-        alertPlayer = AlertPlayer.create(context)
         viewModelScope.launch {
             val s = com.driveguard.app.data.SettingsRepository(context).settings.first()
             soundEnabled = s.soundEnabled
@@ -94,6 +98,11 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
     /** Binds the camera and starts a session. */
     fun start(lifecycleOwner: LifecycleOwner, previewView: androidx.camera.view.PreviewView) {
         if (sessionStartMs != 0L) return
+        // [stop] releases the player, so a subsequent session must create a
+        // fresh one; otherwise sound and vibration would be silently dead.
+        if (alertPlayer == null) {
+            alertPlayer = AlertPlayer.create(context)
+        }
         val now = System.currentTimeMillis()
         sessionStartMs = now
         stopping = false
@@ -230,7 +239,10 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
 
         val entity = recorder.build(sessionStartMs, now)
         sessionStartMs = 0L
-        viewModelScope.launch {
+        // Application-scoped, not viewModelScope: clearing the ViewModel must
+        // not discard a session the user just finished.
+        val app = getApplication<com.driveguard.app.DriveGuardApplication>()
+        app.applicationScope.launch {
             val dao = com.driveguard.app.data.AppDatabase.get(context).sessionDao()
             val id = dao.insert(entity)
             _sessionFinished.value = id

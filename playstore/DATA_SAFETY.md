@@ -48,6 +48,28 @@ transmitted (no INTERNET permission). Answer "No" to collection.
   About → Limitations).
 - Not presented as a medical device or certified safety system.
 
+## Verified against the build (2026-11-22)
+
+- Shipped release manifest requests only `CAMERA`, `VIBRATE`,
+  `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CAMERA` and
+  `WAKE_LOCK`; `INTERNET` and `ACCESS_NETWORK_STATE` (injected by
+  `transport-backend-cct` via ML Kit) are removed with `tools:node="remove"`.
+  CI enforces this: `scripts/check-release-permissions.sh` fails the build if
+  either permission reappears in the merged manifest or the release APK.
+- Release build is 16 KB-page compatible: `zipalign -c -P 16 -v 4` passes and
+  every shipped 64-bit library has `p_align >= 16384` (LiteRT's `x86_64` binary
+  does not, so release artifacts ship `arm64-v8a` + `armeabi-v7a`).
+- Face detection is fully offline: the bundled ML Kit models are packed in the
+  APK (`assets/models_bundled/blazeface.tfl`, `fssd_*`, `contours.tfl`), and the
+  only shipped code that calls `ConnectivityManager` is DataTransport telemetry,
+  whose call is wrapped by `SafeLoggingExecutor` (permission failure is logged
+  and the event dropped, never a crash).
+- `android:allowBackup="false"`: no cloud backup or device-transfer copy of the
+  local session history/settings, which matches the policy's "uninstalling the
+  app removes all of this data".
+- `bundletool`/`keytool` shows the current AAB is **unsigned** — it must be
+  rebuilt with the production upload key before upload.
+
 ## Pre-submission checklist
 
 - [ ] Replace placeholder contact email in `PRIVACY_POLICY.md`; host it on a public URL and link in Play Console **and** the app (About/Privacy page links to in-app copy; add a remote-URL link too).

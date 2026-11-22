@@ -17,8 +17,9 @@ stops, camera use stops.
 ## On-device processing
 
 All computation — face detection and eye-state classification — happens on
-your device. The app's manifest does not declare the INTERNET permission, so
-the app is technically incapable of transmitting data anywhere.
+your device. The shipped app requests no INTERNET or network-state permission
+(the network permissions declared by an ML Kit dependency are removed at build
+time), so the app is technically incapable of transmitting data anywhere.
 
 ## Data we collect
 
