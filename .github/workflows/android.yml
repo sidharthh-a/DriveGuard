@@ -27,8 +27,12 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      # v4, not v3: v3 asks sdkmanager for the "tools" package, which Google
+      # stopped serving (removed Sep 2026), so the action fails before any
+      # build runs. v4 skips it and only installs cmdline-tools/platform-tools;
+      # the runner image already ships build-tools 37.0.0 and platform 37.0.
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --console=plain
@@ -41,11 +45,12 @@ jobs:
       - name: Release build (unsigned)
         run: ./gradlew :app:assembleRelease :app:bundleRelease --console=plain
 
-      # Privacy gate: fails if a dependency bump re-adds INTERNET or
-      # ACCESS_NETWORK_STATE to the shipped release artifacts, and prints the
-      # permission list the release APK actually requests. Covers the release
-      # APK and the release AAB — the file uploaded to Play.
-      - name: Verify release permissions
+      # Release gate. Fails if a dependency bump re-adds INTERNET or
+      # ACCESS_NETWORK_STATE to the shipped release artifacts, and if any
+      # 64-bit native library in the release AAB has a PT_LOAD segment aligned
+      # below 16 KB. Prints the permission list the release APK requests and
+      # the alignment of every library in the AAB — the file uploaded to Play.
+      - name: Verify release permissions and 16 KB alignment
         run: ./scripts/check-release-permissions.sh
 
       - name: Upload reports

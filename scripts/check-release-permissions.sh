@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# Privacy gate: the app promises that it cannot reach the network, which is
-# enforced by never requesting the network permissions. ML Kit pulls
-# INTERNET/ACCESS_NETWORK_STATE in transitively (transport-backend-cct), so a
-# dependency bump could silently re-add them to the shipped artifact. This
-# script inspects the merged release manifest, the built release APK(s) and the
-# release AAB — the file uploaded to Play — and fails the build if either
-# permission comes back.
+# Release gate for two promises that a dependency bump can silently break:
+#
+#  1. The app cannot reach the network, enforced by never requesting the
+#     network permissions. ML Kit pulls INTERNET/ACCESS_NETWORK_STATE in
+#     transitively (transport-backend-cct), so a dependency bump could
+#     re-add them. The merged release manifest, the built release APK(s) and
+#     the release AAB are all inspected.
+#  2. Native libraries support 16 KB memory pages. Play serves users from the
+#     AAB and rejects apps targeting API 35+ whose 64-bit libraries have
+#     PT_LOAD segments aligned below 16384 bytes, so the libraries bundled in
+#     the AAB are checked here too.
 #
 # Run after :app:assembleRelease :app:bundleRelease, with ANDROID_HOME (or
 # ANDROID_SDK_ROOT) set.
@@ -65,6 +69,9 @@ if [[ -z "$AAPT2" || ! -x "$AAPT2" ]]; then
 fi
 if ! command -v unzip >/dev/null 2>&1; then
     fail "unzip not found; it is needed to read the release AAB."
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    fail "python3 not found; it is needed to read the ELF program headers of the bundled libraries."
 fi
 
 # ---------------------------------------------------------------------------
@@ -244,13 +251,122 @@ for aab in "${AABS[@]}"; do
     note ""
 done
 
+# ---------------------------------------------------------------------------
+# Release bundle native library alignment (16 KB pages)
+# ---------------------------------------------------------------------------
+# Play builds the 16 KB-page variant from the AAB, so every shipped 64-bit
+# library must have all of its PT_LOAD segments aligned to at least 0x4000.
+# The ELF program headers are parsed directly instead of shelling out to
+# readelf/llvm-readelf, which are not part of the Android SDK and are absent on
+# some developer machines. 32-bit ABIs are reported but not failed: 32-bit
+# devices always use 4 KB pages, and their libraries are legitimately aligned
+# to 0x1000 (as LiteRT's armeabi-v7a binaries are).
+PAGE_16K=16384
+lib_index=0
+for aab in "${AABS[@]}"; do
+    lib_index=$((lib_index + 1))
+    lib_dir="$tmp_dir/libs-$lib_index"
+    mkdir -p "$lib_dir"
+    if ! unzip -o -q "$aab" '*/lib/*/*.so' -d "$lib_dir" >/dev/null 2>&1; then
+        # unzip exits 11 when the pattern matches nothing, which must not be
+        # confused with a damaged bundle; the empty-list check below reports it.
+        if [[ -n "$(find "$lib_dir" -type f -name '*.so' -print -quit)" ]]; then
+            fail "Could not extract the native libraries from $aab; 16 KB-page alignment cannot be verified."
+        fi
+    fi
+
+    libs=()
+    while IFS= read -r lib; do
+        [[ -n "$lib" ]] && libs+=("$lib")
+    done < <(find "$lib_dir" -type f -name '*.so' | sort)
+    if [[ "${#libs[@]}" -eq 0 ]]; then
+        fail "No native libraries found in $aab. This app ships LiteRT and ML Kit libraries, so an empty result means the bundle layout changed and the alignment check would pass vacuously."
+    fi
+
+    if ! alignment_report="$(
+        python3 - "${libs[@]}" <<'PY' 2>&1
+import struct
+import sys
+
+PT_LOAD = 1
+ALIGN_OFFSET = {1: 0x1C, 2: 0x30}
+ALIGN_FORMAT = {1: 'I', 2: 'Q'}
+
+for path in sys.argv[1:]:
+    with open(path, 'rb') as handle:
+        data = handle.read()
+    if len(data) < 0x34 or data[:4] != b'\x7fELF':
+        sys.exit('%s: not an ELF file' % path)
+    elf_class, elf_data = data[4], data[5]
+    if elf_class not in (1, 2) or elf_data not in (1, 2):
+        sys.exit('%s: unsupported ELF class/byte order' % path)
+    endian = '<' if elf_data == 1 else '>'
+    if elf_class == 2:
+        phoff, = struct.unpack_from(endian + 'Q', data, 0x20)
+        phentsize, phnum = struct.unpack_from(endian + 'HH', data, 0x36)
+    else:
+        phoff, = struct.unpack_from(endian + 'I', data, 0x1C)
+        phentsize, phnum = struct.unpack_from(endian + 'HH', data, 0x2A)
+
+    # The minimum, not the maximum: one under-aligned PT_LOAD segment is
+    # enough to break loading on a 16 KB-page device.
+    min_align = None
+    for index in range(phnum):
+        base = phoff + index * phentsize
+        if base + phentsize > len(data):
+            sys.exit('%s: truncated program header table' % path)
+        if struct.unpack_from(endian + 'I', data, base)[0] != PT_LOAD:
+            continue
+        p_align, = struct.unpack_from(
+            endian + ALIGN_FORMAT[elf_class], data, base + ALIGN_OFFSET[elf_class]
+        )
+        min_align = p_align if min_align is None else min(min_align, p_align)
+    if min_align is None:
+        sys.exit('%s: no PT_LOAD segment found' % path)
+    print('%s\t%d' % (path, min_align))
+PY
+    )"; then
+        fail "Could not read the ELF program headers of the libraries in $aab; 16 KB-page alignment cannot be verified:
+$alignment_report"
+    fi
+
+    aligned_64bit=0
+    note "Native library PT_LOAD alignment in ${aab##*/}:"
+    while IFS=$'\t' read -r lib min_align; do
+        [[ -n "$lib" ]] || continue
+        rel="${lib#"$lib_dir"/}"
+        abi="$(basename "$(dirname "$lib")")"
+        case "$abi" in
+            arm64-v8a | x86_64 | riscv64 | mips64)
+                aligned_64bit=$((aligned_64bit + 1))
+                if (( min_align < PAGE_16K )); then
+                    printf '::error file=%s::%s ships a PT_LOAD segment aligned to %d bytes (0x%x), below the 16384 bytes (0x4000) required for 16 KB-page devices. Update or replace the dependency that provides it.\n' \
+                        "$aab" "$rel" "$min_align" "$min_align" >&2
+                    status=1
+                    note "  $rel: $min_align bytes (0x$(printf '%x' "$min_align")) FAIL"
+                else
+                    note "  $rel: $min_align bytes (0x$(printf '%x' "$min_align")) ok"
+                fi
+                ;;
+            *)
+                note "  $rel: $min_align bytes (0x$(printf '%x' "$min_align")) — 32-bit ABI, 16 KB pages are not required"
+                ;;
+        esac
+    done <<< "$alignment_report"
+    note ""
+
+    if [[ "$aligned_64bit" -eq 0 ]]; then
+        fail "No 64-bit native library found in $aab; the 16 KB-page alignment check cannot verify anything."
+    fi
+done
+
 if [[ "$status" -ne 0 ]]; then
-    fail "Release permissions check failed: the app must not request INTERNET or ACCESS_NETWORK_STATE."
+    fail "Release gate failed: the app must not request INTERNET or ACCESS_NETWORK_STATE, and every 64-bit library in the AAB must be 16 KB-page aligned."
 fi
 
 note "OK  release APK requests no network permission."
 if [[ "${#AABS[@]}" -gt 0 ]]; then
-    note "OK  release AAB (Play upload) requests no network permission."
+    note "OK  release AAB (Play upload) requests no network permission and its 64-bit libraries are 16 KB-page aligned."
 fi
 
 # Report-only: the list is printed for human review, but only the network
@@ -266,5 +382,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
         echo "Shipped permissions (release APK):"
         echo ""
         printf '%s\n' "${shipped_all[@]}" | sort -u | sed 's/^\(.*\)$/- `\1`/'
+        echo ""
+        echo "Every 64-bit native library in the release AAB is 16 KB-page aligned."
     } >> "$GITHUB_STEP_SUMMARY"
 fi

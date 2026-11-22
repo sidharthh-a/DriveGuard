@@ -56,10 +56,14 @@ transmitted (no INTERNET permission). Answer "No" to collection.
   `transport-backend-cct` via ML Kit) are removed with `tools:node="remove"`.
   CI enforces this: `scripts/check-release-permissions.sh` fails the build if
   either permission reappears in the merged manifest, the release APK or the
-  release AAB that is uploaded to Play.
+  release AAB that is uploaded to Play, and it also verifies 16 KB-page
+  alignment of the native libraries inside that AAB.
 - Release build is 16 KB-page compatible: `zipalign -c -P 16 -v 4` passes and
   every shipped 64-bit library has `p_align >= 16384` (LiteRT's `x86_64` binary
-  does not, so release artifacts ship `arm64-v8a` + `armeabi-v7a`).
+  does not, so release artifacts ship `arm64-v8a` + `armeabi-v7a`). CI enforces
+  this on the artifact Play actually receives: `scripts/check-release-permissions.sh`
+  fails if any 64-bit library in the release AAB has a `PT_LOAD` segment aligned
+  below 16384 bytes.
 - Face detection is fully offline: the bundled ML Kit models are packed in the
   APK (`assets/models_bundled/blazeface.tfl`, `fssd_*`, `contours.tfl`), and the
   only shipped code that calls `ConnectivityManager` is DataTransport telemetry,

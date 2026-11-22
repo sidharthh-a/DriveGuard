@@ -251,7 +251,7 @@ Gate status for the current tree (JDK 17, Android SDK 37):
 | Android Lint (release) | `./gradlew :app:lintRelease` | 0 errors |
 | R8 + resource shrinking | `./gradlew :app:assembleRelease` | succeeds |
 | Release bundle | `./gradlew :app:bundleRelease` | `app/build/outputs/bundle/release/app-release.aab` |
-| 16 KB page alignment | `zipalign -c -P 16 -v 4 <apk>` | pass |
+| 16 KB page alignment | `zipalign -c -P 16 -v 4 <apk>` + `./scripts/check-release-permissions.sh` (libraries in the AAB) | pass (APK and AAB) |
 | No network permission | `./scripts/check-release-permissions.sh` | pass (manifest, APK and AAB) |
 
 Release artifacts ship `arm64-v8a` and `armeabi-v7a` only. LiteRT 1.0.1 binds
@@ -261,12 +261,19 @@ x86_64 emulators still install. Upgrading LiteRT to a release with 16 KB-aligned
 x86_64 binaries would let that filter be removed.
 
 `.github/workflows/android.yml` runs the unit tests, lint, the unsigned release
-build and the release permission gate on every push and pull request. The gate
+build and the release gate on every push and pull request. The gate
 (`scripts/check-release-permissions.sh`) reads the merged release manifest, the
 built release APK and the release AAB (the artifact uploaded to Play), fails if
 `INTERNET` or `ACCESS_NETWORK_STATE` reappears in any of them, and prints the
 permission list the APK actually ships — so a dependency bump cannot silently
 break the no-network promise.
+
+The same gate parses the ELF program headers of every native library inside the
+release AAB and fails if a 64-bit library has a `PT_LOAD` segment aligned below
+16384 bytes: Play builds the 16 KB-page variant from the AAB, so an unaligned
+library there is just as fatal as one in the APK. 32-bit libraries are printed
+for review but not failed — 32-bit devices use 4 KB pages, and LiteRT's
+`armeabi-v7a` binaries are legitimately aligned to 0x1000.
 
 Remaining owner actions before upload:
 
