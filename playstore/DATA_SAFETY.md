@@ -55,7 +55,8 @@ transmitted (no INTERNET permission). Answer "No" to collection.
   `WAKE_LOCK`; `INTERNET` and `ACCESS_NETWORK_STATE` (injected by
   `transport-backend-cct` via ML Kit) are removed with `tools:node="remove"`.
   CI enforces this: `scripts/check-release-permissions.sh` fails the build if
-  either permission reappears in the merged manifest or the release APK.
+  either permission reappears in the merged manifest, the release APK or the
+  release AAB that is uploaded to Play.
 - Release build is 16 KB-page compatible: `zipalign -c -P 16 -v 4` passes and
   every shipped 64-bit library has `p_align >= 16384` (LiteRT's `x86_64` binary
   does not, so release artifacts ship `arm64-v8a` + `armeabi-v7a`).

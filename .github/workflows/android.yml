@@ -42,8 +42,9 @@ jobs:
         run: ./gradlew :app:assembleRelease :app:bundleRelease --console=plain
 
       # Privacy gate: fails if a dependency bump re-adds INTERNET or
-      # ACCESS_NETWORK_STATE to the shipped release artifact, and prints the
-      # permission list the release APK actually requests.
+      # ACCESS_NETWORK_STATE to the shipped release artifacts, and prints the
+      # permission list the release APK actually requests. Covers the release
+      # APK and the release AAB — the file uploaded to Play.
       - name: Verify release permissions
         run: ./scripts/check-release-permissions.sh
 

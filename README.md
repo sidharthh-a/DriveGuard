@@ -252,7 +252,7 @@ Gate status for the current tree (JDK 17, Android SDK 37):
 | R8 + resource shrinking | `./gradlew :app:assembleRelease` | succeeds |
 | Release bundle | `./gradlew :app:bundleRelease` | `app/build/outputs/bundle/release/app-release.aab` |
 | 16 KB page alignment | `zipalign -c -P 16 -v 4 <apk>` | pass |
-| No network permission | `./scripts/check-release-permissions.sh` | pass |
+| No network permission | `./scripts/check-release-permissions.sh` | pass (manifest, APK and AAB) |
 
 Release artifacts ship `arm64-v8a` and `armeabi-v7a` only. LiteRT 1.0.1 binds
 an `x86_64` JNI library that is 4 KB-aligned, which Play rejects for apps
@@ -262,10 +262,11 @@ x86_64 binaries would let that filter be removed.
 
 `.github/workflows/android.yml` runs the unit tests, lint, the unsigned release
 build and the release permission gate on every push and pull request. The gate
-(`scripts/check-release-permissions.sh`) reads the merged release manifest and
-the built release APK, fails if `INTERNET` or `ACCESS_NETWORK_STATE` reappears,
-and prints the permission list the APK actually ships — so a dependency bump
-cannot silently break the no-network promise.
+(`scripts/check-release-permissions.sh`) reads the merged release manifest, the
+built release APK and the release AAB (the artifact uploaded to Play), fails if
+`INTERNET` or `ACCESS_NETWORK_STATE` reappears in any of them, and prints the
+permission list the APK actually ships — so a dependency bump cannot silently
+break the no-network promise.
 
 Remaining owner actions before upload:
 
