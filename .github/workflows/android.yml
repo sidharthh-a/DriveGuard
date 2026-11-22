@@ -72,6 +72,19 @@ jobs:
       - name: Verify release permissions and 16 KB alignment
         run: ./scripts/check-release-permissions.sh
 
+      # Deliberately after the gate: a build that reintroduced INTERNET or a
+      # 4 KB-aligned 64-bit library fails above and never reaches this step.
+      # The APK is app-release-unsigned.apk (no signing credentials in CI), so
+      # these are for inspecting/verifying the build, not for installing.
+      - name: Upload release APK and AAB
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
