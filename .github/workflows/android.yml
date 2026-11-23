@@ -72,6 +72,14 @@ jobs:
       - name: Verify release permissions and 16 KB alignment
         run: ./scripts/check-release-permissions.sh
 
+      # Debug builds are signed by AGP with the runner's auto-generated debug
+      # keystore, so this APK installs on a phone as-is, alongside a release
+      # install (its application id is com.driveguard.app.debug). It is a
+      # separate build from the release one: all ABIs, no R8, and no gate, so
+      # never hand it to Play.
+      - name: Debug APK
+        run: ./gradlew :app:assembleDebug --console=plain
+
       # Deliberately after the gate: a build that reintroduced INTERNET or a
       # 4 KB-aligned 64-bit library fails above and never reaches this step.
       # The APK is app-release-unsigned.apk (no signing credentials in CI), so
@@ -84,6 +92,14 @@ jobs:
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
+
+      # Its own artifact: this is the one you can adb install / sideload.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: debug-apk
+          if-no-files-found: error
+          path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload reports
         if: always()
