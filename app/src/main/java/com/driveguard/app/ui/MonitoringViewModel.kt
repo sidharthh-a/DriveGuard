@@ -73,6 +73,9 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
 
     @Volatile private var soundEnabled = true
     @Volatile private var vibrationEnabled = true
+
+    /** True while an alert's sound/vibration is still going. */
+    @Volatile private var alarmSounding = false
     private val lastInferenceMs = AtomicLong(0)
 
     /** Loads the model and settings. Reports whether the model is usable. */
@@ -160,6 +163,13 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
 
     private var timerJob: Job? = null
 
+    /** Stops any alert still playing, once per alert. */
+    private fun silenceAlarm() {
+        if (!alarmSounding) return
+        alarmSounding = false
+        alertPlayer?.silence()
+    }
+
     private fun handleFrameResult(result: FrameResult) {
         val now = System.currentTimeMillis()
         when (result) {
@@ -168,10 +178,17 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
                 recorder.onInferenceSample(analyzer?.lastAnalysisMs ?: 0L)
                 val observation = detector.update(result.verdict, now)
                 detector.tick(now)
+                // An alarm must not outlive the drowsiness that caused it: the
+                // moment the model sees open eyes again, cut the sound and
+                // vibration instead of letting the ringtone play out.
+                if (observation == Observation.EYES_OPEN) {
+                    silenceAlarm()
+                }
                 if (detector.pollAlertFired()) {
                     recorder.onAlert()
                     alertEngine.onDrowsinessStart(now)?.let { evt ->
                         alertPlayer?.play(evt, soundEnabled, vibrationEnabled)
+                        alarmSounding = true
                     }
                 }
                 if (!detector.isAlertActive()) {
@@ -233,6 +250,7 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
         }
         analyzer?.close()
         analyzer = null
+        alarmSounding = false
         alertPlayer?.release()
         alertPlayer = null
         MonitoringService.stop(context)

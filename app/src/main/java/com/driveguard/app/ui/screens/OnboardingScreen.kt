@@ -1,5 +1,6 @@
 package com.driveguard.app.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,31 +10,31 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraFront
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.driveguard.app.ui.components.Mark
+import com.driveguard.app.ui.components.PrimaryAction
 import kotlinx.coroutines.launch
 
 private data class OnboardingPage(
@@ -64,7 +65,7 @@ private val PAGES = listOf(
             "or shared. No account, no internet connection required.",
     ),
     OnboardingPage(
-        Icons.Rounded.Warning,
+        Icons.Rounded.WarningAmber,
         "An assistant — never a replacement",
         "DriveGuard is a helpful second pair of eyes, not a safety system. " +
             "It can miss alerts or raise false ones. Never drive impaired or " +
@@ -77,57 +78,69 @@ private val PAGES = listOf(
 fun OnboardingScreen(onFinished: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { PAGES.size })
     val scope = rememberCoroutineScope()
+    val isLast = pagerState.currentPage == PAGES.size - 1
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .safeDrawingPadding()
+            .padding(horizontal = 24.dp, vertical = 8.dp),
     ) {
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (pagerState.currentPage < PAGES.size - 1) {
-                TextButton(onClick = onFinished) { Text("Skip") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Mark(tint = MaterialTheme.colorScheme.primary, size = 20.dp)
+                Spacer(Modifier.size(8.dp))
+                Text("DriveGuard", style = MaterialTheme.typography.titleMedium)
+            }
+            if (!isLast) {
+                TextButton(onClick = onFinished) {
+                    Text(
+                        "Skip",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
+
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.weight(1f),
         ) { page ->
             OnboardingPageContent(PAGES[page])
         }
+
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 20.dp),
             horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             repeat(PAGES.size) { i ->
                 val selected = pagerState.currentPage == i
                 Box(
                     Modifier
-                        .padding(4.dp)
-                        .size(if (selected) 10.dp else 8.dp)
-                        .clip(CircleShape)
-                        .semantics { contentDescription = "Page ${i + 1}" }
-                        .let {
-                            if (selected) it
-                            else it
-                        },
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {}
-                }
+                        .padding(horizontal = 3.dp)
+                        .size(if (selected) 7.dp else 5.dp)
+                        .background(
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                            shape = CircleShape,
+                        )
+                        .semantics { contentDescription = "Page ${i + 1}" },
+                )
             }
         }
-        Button(
+
+        PrimaryAction(
+            text = if (isLast) "Get started" else "Next",
             onClick = {
-                if (pagerState.currentPage < PAGES.size - 1) {
+                if (!isLast) {
                     scope.launch {
                         pagerState.animateScrollToPage(pagerState.currentPage + 1)
                     }
@@ -135,15 +148,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                     onFinished()
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-        ) {
-            Text(
-                if (pagerState.currentPage < PAGES.size - 1) "Next"
-                else "Get started",
-            )
-        }
+        )
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -157,19 +162,26 @@ private fun OnboardingPageContent(page: OnboardingPage) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            page.icon,
-            contentDescription = null,
-            modifier = Modifier.size(96.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(32.dp))
+        Box(
+            Modifier
+                .size(64.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                page.icon,
+                contentDescription = null,
+                modifier = Modifier.size(26.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Spacer(Modifier.height(28.dp))
         Text(
             page.title,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             page.body,
             style = MaterialTheme.typography.bodyLarge,

@@ -1,10 +1,13 @@
 package com.driveguard.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import com.driveguard.app.data.AppearanceMode
 
 private val LightColors = lightColorScheme(
@@ -22,6 +25,8 @@ private val LightColors = lightColorScheme(
     onTertiaryContainer = md_light_onTertiaryContainer,
     error = md_light_error,
     onError = md_light_onError,
+    errorContainer = md_light_errorContainer,
+    onErrorContainer = md_light_onErrorContainer,
     background = md_light_background,
     onBackground = md_light_onBackground,
     surface = md_light_surface,
@@ -29,6 +34,7 @@ private val LightColors = lightColorScheme(
     surfaceVariant = md_light_surfaceVariant,
     onSurfaceVariant = md_light_onSurfaceVariant,
     outline = md_light_outline,
+    outlineVariant = md_light_outlineVariant,
 )
 
 private val DarkColors = darkColorScheme(
@@ -46,6 +52,8 @@ private val DarkColors = darkColorScheme(
     onTertiaryContainer = md_dark_onTertiaryContainer,
     error = md_dark_error,
     onError = md_dark_onError,
+    errorContainer = md_dark_errorContainer,
+    onErrorContainer = md_dark_onErrorContainer,
     background = md_dark_background,
     onBackground = md_dark_onBackground,
     surface = md_dark_surface,
@@ -53,6 +61,15 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = md_dark_surfaceVariant,
     onSurfaceVariant = md_dark_onSurfaceVariant,
     outline = md_dark_outline,
+    outlineVariant = md_dark_outlineVariant,
+)
+
+private val DriveGuardShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(28.dp),
 )
 
 @Composable
@@ -68,6 +85,7 @@ fun DriveGuardTheme(
     MaterialTheme(
         colorScheme = if (dark) DarkColors else LightColors,
         typography = DriveGuardTypography,
+        shapes = DriveGuardShapes,
         content = content,
     )
 }

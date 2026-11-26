@@ -1,7 +1,6 @@
 package com.driveguard.app.ui.screens
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,8 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,125 +32,160 @@ import androidx.compose.ui.unit.dp
 import com.driveguard.app.detection.DrowsinessDetector
 import com.driveguard.app.util.TimeFormat
 
+// Overlay palette: everything sits on top of the live camera, so it is
+// deliberately monochrome with one accent that carries the state.
+private val Glass = Color(0x8C0B0F0E)
+private val GlassStrong = Color(0xCC0B0F0E)
+private val OnGlass = Color(0xFFF4F6F5)
+private val OnGlassSoft = Color(0xB3F4F6F5)
+
+private val Calm = Color(0xFF7FD8C4)
+private val Caution = Color(0xFFF0B357)
+private val Alarm = Color(0xFFFF8A7A)
+
 /**
- * The active-monitoring overlay. Intentionally minimal: a single large status
- * band, the session timer and one obvious stop control. The camera preview is
- * composed *behind* this overlay by the navigation route.
+ * The active-monitoring overlay: current state, the eye reading, the timer and
+ * one stop control. The camera preview is composed *behind* this by the
+ * navigation route.
  */
 @Composable
 fun DrivingScreen(
     monitoringState: MonitoringUiState,
     onStop: () -> Unit,
 ) {
-    // Animated colors keep transitions smooth — no banding/flicker.
-    val statusColor by animateColorAsState(
+    val accent by animateColorAsState(
         targetValue = when (monitoringState.state) {
-            DrowsinessDetector.State.AWAKE -> Color(0xCC1565C0)
-            DrowsinessDetector.State.EYES_CLOSING -> Color(0xCCFF8F00)
-            DrowsinessDetector.State.DROWSY_ALERT -> Color(0xCCD32F2F)
-            DrowsinessDetector.State.RECOVERING -> Color(0xCC00695C)
+            DrowsinessDetector.State.AWAKE -> Calm
+            DrowsinessDetector.State.EYES_CLOSING -> Caution
+            DrowsinessDetector.State.DROWSY_ALERT -> Alarm
+            DrowsinessDetector.State.RECOVERING -> Calm
         },
         animationSpec = tween(300),
-        label = "statusColor",
+        label = "accent",
     )
     val statusText = when (monitoringState.state) {
         DrowsinessDetector.State.AWAKE -> "Monitoring"
         DrowsinessDetector.State.EYES_CLOSING -> "Stay alert"
-        DrowsinessDetector.State.DROWSY_ALERT -> "DROWSINESS DETECTED"
+        DrowsinessDetector.State.DROWSY_ALERT -> "Drowsiness detected"
         DrowsinessDetector.State.RECOVERING -> "Recovering"
     }
     val attentionText = when (monitoringState.faceState) {
         FaceState.FACE_OK -> monitoringState.eyeStateLabel
         FaceState.FACE_TEMPORARILY_LOST -> "Face temporarily lost"
         FaceState.NO_FACE -> "Face not detected"
-        FaceState.FACE_TOO_SMALL -> "Move phone closer for reliable monitoring"
+        FaceState.FACE_TOO_SMALL -> "Move phone closer"
     }
-    val faceGlyph = when (monitoringState.faceState) {
-        FaceState.FACE_OK -> "✓"
-        FaceState.FACE_TEMPORARILY_LOST -> "⚠"
-        else -> "✕"
-    }
+    val alerting = monitoringState.state == DrowsinessDetector.State.DROWSY_ALERT
 
     if (monitoringState.inPipMode) {
-        PipMonitoringContent(monitoringState, statusText, statusColor, faceGlyph)
+        PipMonitoringContent(monitoringState, statusText, accent, attentionText)
         return
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Transparent),
-    ) {
+    Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .safeDrawingPadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
-            Spacer(Modifier.weight(1f))
-            // Face-status chip — distinct ✓ / ⚠ / ✕ states, animated color,
-            // stable content description for TalkBack.
-            val chipColor by animateColorAsState(
-                targetValue = when (monitoringState.faceState) {
-                    FaceState.FACE_OK -> Color(0xCC2E7D32)
-                    FaceState.FACE_TEMPORARILY_LOST -> Color(0xCCF9A825)
-                    else -> Color(0xCCB71C1C)
-                },
-                animationSpec = tween(250),
-                label = "chipColor",
-            )
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = chipColor,
-                modifier = Modifier.semantics {
-                    contentDescription = "Face status: $attentionText"
-                },
-            ) {
-                Text(
-                    "$faceGlyph  $attentionText",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = statusColor,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "Monitoring status: $statusText" },
-            ) {
-                Column(
-                    Modifier.padding(vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        statusText,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
-                    )
-                    Text(
-                        attentionText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    TimeFormat.duration(monitoringState.elapsedMs),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    modifier = Modifier.background(Color(0x66000000), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-                Button(onClick = onStop) {
-                    Text("Stop monitoring")
+                Surface(
+                    shape = RoundedCornerShape(100.dp),
+                    color = Glass,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Monitoring status: $statusText"
+                    },
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .background(accent, CircleShape),
+                        )
+                        Spacer(Modifier.size(9.dp))
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = OnGlass,
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(100.dp),
+                    color = Glass,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Face status: $attentionText"
+                    },
+                ) {
+                    Text(
+                        attentionText,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = OnGlassSoft,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            if (alerting) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = GlassStrong,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(
+                            "Eyes have been closed",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Alarm,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Open your eyes to silence the alarm.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OnGlassSoft,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column {
+                    Text(
+                        TimeFormat.duration(monitoringState.elapsedMs),
+                        style = MaterialTheme.typography.displayMedium,
+                        color = OnGlass,
+                    )
+                    Text(
+                        "ELAPSED",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OnGlassSoft,
+                    )
+                }
+                Button(
+                    onClick = onStop,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = OnGlass,
+                        contentColor = Color(0xFF0B0F0E),
+                    ),
+                    elevation = null,
+                ) {
+                    Text("Stop", style = MaterialTheme.typography.titleMedium)
                 }
             }
         }
@@ -155,46 +193,44 @@ fun DrivingScreen(
 }
 
 /**
- * Compact layout for the picture-in-picture window: status text large enough
- * to read at PiP size, the face glyph, and the timer — nothing else. All
- * interaction (stop) stays in the full-screen UI / remote actions.
+ * Compact picture-in-picture layout: state and timer, readable at PiP size.
+ * Interaction stays in the full-screen UI / remote actions.
  */
 @Composable
 private fun PipMonitoringContent(
     monitoringState: MonitoringUiState,
     statusText: String,
-    statusColor: Color,
-    faceGlyph: String,
+    accent: Color,
+    attentionText: String,
 ) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Transparent),
-    ) {
+    Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = statusColor,
-            ) {
-                Text(
-                    statusText,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                )
+            Surface(shape = RoundedCornerShape(100.dp), color = GlassStrong) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(6.dp).background(accent, CircleShape))
+                    Spacer(Modifier.size(7.dp))
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = OnGlass,
+                    )
+                }
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                "$faceGlyph ${TimeFormat.duration(monitoringState.elapsedMs)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
+                "${TimeFormat.duration(monitoringState.elapsedMs)} · $attentionText",
+                style = MaterialTheme.typography.labelMedium,
+                color = OnGlass,
                 modifier = Modifier
-                    .background(Color(0x88000000), RoundedCornerShape(10.dp))
+                    .background(Glass, RoundedCornerShape(100.dp))
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
@@ -202,13 +238,11 @@ private fun PipMonitoringContent(
 }
 
 /**
- * Face tracking status for the UI. The three states map 1:1 onto the
- * detector's [com.driveguard.app.detection.FaceTrackStatus]:
- *
- *  - FACE_OK              → "✓ Face detected" (+ eye state)
- *  - FACE_TEMPORARILY_LOST → "⚠ Face temporarily lost" (grace window active,
- *                           drowsiness evidence is frozen — not a failure)
- *  - NO_FACE              → "✕ Face not detected" (grace expired or driver gone)
+ * Face tracking status for the UI, mapped 1:1 onto the detector's
+ * [com.driveguard.app.detection.FaceTrackStatus]:
+ *  - FACE_OK: face tracked (+ eye state)
+ *  - FACE_TEMPORARILY_LOST: grace window active, evidence frozen
+ *  - NO_FACE: grace expired or driver gone
  */
 enum class FaceState { FACE_OK, FACE_TEMPORARILY_LOST, NO_FACE, FACE_TOO_SMALL }
 

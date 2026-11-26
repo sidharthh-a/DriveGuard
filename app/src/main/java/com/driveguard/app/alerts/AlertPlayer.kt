@@ -106,6 +106,21 @@ class AlertPlayer(
         }
     }
 
+    /**
+     * Cuts everything an alert is currently doing. Used when the driver's eyes
+     * are seen open again: the alarm must not outlive the drowsiness that
+     * caused it, so a ringtone still playing mid-note is stopped here rather
+     * than left to run to its end.
+     */
+    fun silence() {
+        stopAlarm()
+        try {
+            vibrator?.cancel()
+        } catch (e: Exception) {
+            Log.w(TAG, "vibration cancel failed", e)
+        }
+    }
+
     fun stopAlarm() {
         try {
             mediaPlayer?.let { p ->

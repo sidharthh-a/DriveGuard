@@ -1,6 +1,5 @@
 package com.driveguard.app.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,14 +7,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.driveguard.app.data.SessionSummary
 import com.driveguard.app.ui.components.EmptyState
-import com.driveguard.app.ui.components.SectionCard
 import com.driveguard.app.util.TimeFormat
 import java.text.DateFormat
 import java.util.Date
@@ -39,17 +37,34 @@ fun HistoryScreen(
     onDelete: (Long) -> Unit,
     onClearAll: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = 24.dp),
+    ) {
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("History", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "History",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(vertical = 16.dp),
+            )
             if (sessions.isNotEmpty()) {
-                TextButton(onClick = onClearAll) { Text("Clear all") }
+                TextButton(onClick = onClearAll) {
+                    Text(
+                        "Clear all",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
+
         if (sessions.isEmpty()) {
             EmptyState(
                 icon = Icons.Rounded.History,
@@ -57,9 +72,12 @@ fun HistoryScreen(
                 body = "Completed driving sessions will appear here.",
             )
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(sessions, key = { it.id }) { s ->
-                    SessionRow(s, onDelete)
+            LazyColumn {
+                itemsIndexed(sessions, key = { _, s -> s.id }) { index, session ->
+                    if (index > 0) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    SessionRow(session, onDelete)
                 }
             }
         }
@@ -68,35 +86,33 @@ fun HistoryScreen(
 
 @Composable
 private fun SessionRow(session: SessionSummary, onDelete: (Long) -> Unit) {
-    Card(
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        ),
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                        .format(Date(session.startedAtMs)),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    "${TimeFormat.durationHuman(session.durationMs)} · " +
-                        "${session.alertCount} alerts · " +
-                        "${session.monitoringInterruptions} interruptions",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = { onDelete(session.id) }) {
-                Icon(Icons.Rounded.Delete, contentDescription = "Delete session")
-            }
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Text(
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(Date(session.startedAtMs)),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "${TimeFormat.durationHuman(session.durationMs)} · " +
+                    "${session.alertCount} alerts",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = { onDelete(session.id) }) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = "Delete session",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
