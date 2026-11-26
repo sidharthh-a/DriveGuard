@@ -44,23 +44,34 @@ class AlertPlayer(
             .build()
     }
 
+    /**
+     * Starts (or restarts) an alert. Anything still running is cut first so a
+     * second episode never stacks on the previous ringtone or vibration.
+     */
     fun play(event: AlertEvent, soundEnabled: Boolean, vibrationEnabled: Boolean) {
+        silence()
         if (vibrationEnabled) {
-            vibrate(event.level)
+            // Loops while the alert is latched: the episode lasts until the
+            // eyes are open for a while, so one pulse left most of it silent.
+            vibrate(event.level, repeat = 0)
         }
         if (soundEnabled) {
             playAlarm()
         }
     }
 
-    private fun vibrate(level: AlertLevel) {
+    /**
+     * @param repeat 0 loops the pattern until [silence]/[stopAlarm] (used for
+     *   an active alert); -1 plays it once (used by the pre-check test).
+     */
+    private fun vibrate(level: AlertLevel, repeat: Int) {
         val vib = vibrator ?: return
         if (!vib.hasVibrator()) return
         val effect = when (level) {
-            AlertLevel.LEVEL_1 -> VibrationEffect.createWaveform(longArrayOf(0, 220, 180, 220), -1)
-            AlertLevel.LEVEL_2 -> VibrationEffect.createWaveform(longArrayOf(0, 320, 140, 320, 140, 320), -1)
+            AlertLevel.LEVEL_1 -> VibrationEffect.createWaveform(longArrayOf(0, 220, 180, 220), repeat)
+            AlertLevel.LEVEL_2 -> VibrationEffect.createWaveform(longArrayOf(0, 320, 140, 320, 140, 320), repeat)
             AlertLevel.LEVEL_3 -> VibrationEffect.createWaveform(
-                longArrayOf(0, 420, 100, 420, 100, 420, 100, 420), -1,
+                longArrayOf(0, 420, 100, 420, 100, 420, 100, 420), repeat,
             )
         }
         try {
@@ -82,26 +93,42 @@ class AlertPlayer(
     }
 
     private fun playAlarm() {
+        releasePlayer()
         var player: MediaPlayer? = null
         try {
-            stopAlarm()
             val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             player = MediaPlayer()
             mediaPlayer = player
             player.setDataSource(context, uri)
             player.setAudioAttributes(alarmAttributes)
-            player.isLooping = false
-            // Request transient alarm focus; suppresses media ducking conflicts.
+            // Loop while the alert is latched. A non-looping player that the
+            // previous completion listener killed meant the alarm fell silent
+            // a couple of seconds into the episode — and every later alert
+            // looked dead because the episode stayed latched. [silence] and
+            // [stopAlarm] are what end it now.
+            player.isLooping = true
+            // Request alarm focus; suppresses media ducking conflicts.
             focusRequest?.let { audioManager.requestAudioFocus(it) }
-            player.setOnCompletionListener {
-                stopAlarm()
-            }
             player.prepare() // synchronous; small local file — acceptable on service thread
             player.start()
         } catch (e: Exception) {
             Log.w(TAG, "alarm playback failed", e)
             player?.release()
+            mediaPlayer = null
+        }
+    }
+
+    /** Releases the ringtone without touching vibration or audio focus. */
+    private fun releasePlayer() {
+        try {
+            mediaPlayer?.let { p ->
+                if (p.isPlaying) p.stop()
+                p.release()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "releasePlayer failed", e)
+        } finally {
             mediaPlayer = null
         }
     }
@@ -121,27 +148,21 @@ class AlertPlayer(
         }
     }
 
+    /** Stops the ringtone and releases audio focus (vibration is not touched). */
     fun stopAlarm() {
-        try {
-            mediaPlayer?.let { p ->
-                if (p.isPlaying) p.stop()
-                p.release()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "stopAlarm failed", e)
-        } finally {
-            mediaPlayer = null
-        }
+        releasePlayer()
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
     }
 
-    /** Test hook: quick vibration pattern for the pre-check screen. */
+    /** Test hook: quick, self-terminating vibration burst for the pre-check screen. */
     fun testVibrate() {
-        vibrate(AlertLevel.LEVEL_2)
+        vibrate(AlertLevel.LEVEL_2, repeat = -1)
     }
 
     fun release() {
-        stopAlarm()
+        // Also cancels a looping vibration so nothing keeps buzzing after the
+        // monitoring session is torn down.
+        silence()
     }
 
     companion object {

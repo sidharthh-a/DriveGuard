@@ -20,6 +20,7 @@ import com.driveguard.app.detection.DrowsinessConfig
 import com.driveguard.app.detection.DrowsinessDetector
 import com.driveguard.app.detection.FaceTrackStatus
 import com.driveguard.app.detection.Observation
+import com.driveguard.app.detection.DetectionTuning
 import com.driveguard.app.detection.Sensitivity
 import com.driveguard.app.ml.EyeStateClassifier
 import com.driveguard.app.service.MonitoringService
@@ -170,6 +171,13 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
         alertPlayer?.silence()
     }
 
+    /** Starts the sound/vibration for an alert (a new one or a re-arm). */
+    private fun startRinging(event: AlertEvent) {
+        val player = alertPlayer ?: return
+        player.play(event, soundEnabled, vibrationEnabled)
+        alarmSounding = true
+    }
+
     private fun handleFrameResult(result: FrameResult) {
         val now = System.currentTimeMillis()
         when (result) {
@@ -186,12 +194,22 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (detector.pollAlertFired()) {
                     recorder.onAlert()
-                    alertEngine.onDrowsinessStart(now)?.let { evt ->
-                        alertPlayer?.play(evt, soundEnabled, vibrationEnabled)
-                        alarmSounding = true
-                    }
+                    alertEngine.onDrowsinessStart(now)?.let { evt -> startRinging(evt) }
+                } else if (
+                    detector.isAlertActive() &&
+                    !alarmSounding &&
+                    detector.closedDurationMs(now) >= DetectionTuning.ALARM_REARM_MS
+                ) {
+                    // The episode is still latched but an open-eye frame cut the
+                    // alarm; the eyes are closing again, so sound it once more
+                    // without counting a new episode. Without this a single
+                    // glance up left the rest of the episode silent.
+                    startRinging(AlertEvent(alertEngine.currentLevel(), now))
                 }
                 if (!detector.isAlertActive()) {
+                    // Released (or the driver left the frame): nothing left to
+                    // alarm about. This also re-arms the next episode.
+                    silenceAlarm()
                     alertEngine.onDrowsinessEnd(now)
                 }
                 _uiState.value = _uiState.value.copy(

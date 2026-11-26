@@ -3,8 +3,8 @@ package com.driveguard.app.detection
 /**
  * Minimal frame verdict from the camera/face pipeline.
  *
- * [pClosed] is the raw model output P(eye closed) for the *worse* eye
- * (max across eyes). Only meaningful when [hasFace] is true.
+ * [pClosed] is the combined model output P(eye closed) across both eyes
+ * (see EyeStateClassifier.combineEyes). Only meaningful when [hasFace] is true.
  */
 data class FrameVerdict(
     val hasFace: Boolean,
@@ -48,11 +48,12 @@ enum class FaceTrackStatus { TRACKED, TEMPORARILY_LOST, LOST }
  *  1. A single frame can never trigger an alert — evidence accumulates over
  *     [DrowsinessConfig.closedDurationMs] of continuously closed eyes.
  *  2. Hysteresis on both edges: closed requires p >= confidenceThreshold,
- *     open requires p <= openThreshold, in between is UNCERTAIN (which decays
- *     evidence only after [DrowsinessConfig.uncertainResetMs]).
- *  3. Release hysteresis: drowsiness/alert clears only after
- *     [DrowsinessConfig.releaseDurationMs] of continuous openness (time, not
- *     frames) — blinking while drowsy never clears the state.
+ *     open requires p <= openThreshold, in between is UNCERTAIN (which is NOT
+ *     closure and breaks an accumulated run).
+ *  3. Release hysteresis: drowsiness/alert clears only once no confidently
+ *     closed frame has been seen for [DrowsinessConfig.releaseDurationMs]
+ *     (time, not frames) — blinking while drowsy never clears the state, but
+ *     squinting or looking around does.
  *  4. NO_FACE is NOT drowsiness: inside [DrowsinessConfig.faceLostGraceMs]
  *     the machine FREEZES (keeps accumulated evidence, holds the current
  *     state, no UI flicker); beyond it, evidence is discarded and the state
@@ -69,8 +70,15 @@ class DrowsinessDetector(
 
     private var state: State = State.AWAKE
     private var closedSinceMs: Long? = null
-    private var openSinceMs: Long? = null
-    private var uncertainSinceMs: Long? = null
+
+    /**
+     * When a confidently closed frame was last seen. Release is measured from
+     * here rather than from "openSince": frames inside the hysteresis band are
+     * not closure, so a driver squinting or hovering between bands recovers
+     * instead of holding an alert latched forever (which also blocked every
+     * later alert).
+     */
+    private var lastClosedAtMs: Long? = null
     private var lastAlertFiredAtMs: Long? = null
     private var alertActive = false
     private var alertStartedAtMs: Long? = null
@@ -126,24 +134,16 @@ class DrowsinessDetector(
 
         when (observation) {
             Observation.EYES_CLOSED -> {
-                openSinceMs = null
-                uncertainSinceMs = null
+                lastClosedAtMs = nowMs
                 if (closedSinceMs == null) closedSinceMs = nowMs
             }
 
-            Observation.EYES_OPEN -> {
+            Observation.EYES_OPEN, Observation.UNCERTAIN -> {
+                // Only a confidently closed frame keeps a run alive. A frame in
+                // the hysteresis band is not closure: a half lid, a squint or
+                // one bad eye crop must not extend an accumulated run, which
+                // is what turned partial blinks into false alarms.
                 closedSinceMs = null
-                uncertainSinceMs = null
-                if (openSinceMs == null) openSinceMs = nowMs
-            }
-
-            Observation.UNCERTAIN -> {
-                openSinceMs = null
-                if (uncertainSinceMs == null) uncertainSinceMs = nowMs
-                // Sustained uncertainty decays closure evidence.
-                if (nowMs - uncertainSinceMs!! >= config.uncertainResetMs) {
-                    closedSinceMs = null
-                }
             }
 
             Observation.NO_FACE, Observation.CLASSIFIER_FAILED -> Unit
@@ -170,14 +170,16 @@ class DrowsinessDetector(
             }
         }
 
-        // Release alert? Requires releaseDurationMs of continuous openness
-        // after the hold expires (blink-proof hysteresis).
+        // Release alert? Requires alertHoldMs to have passed AND no
+        // confidently closed frame for releaseDurationMs (blink-proof, but
+        // squinting or looking around does let go).
         if (alertActive) {
             val startedAt = alertStartedAtMs
             val holdOk = startedAt != null && nowMs - startedAt >= config.alertHoldMs
-            val openLongEnough = openSinceMs != null &&
-                nowMs - openSinceMs!! >= config.releaseDurationMs
-            if (holdOk && openLongEnough) {
+            val lastClosed = lastClosedAtMs
+            val notClosedRecently = lastClosed == null ||
+                nowMs - lastClosed >= config.releaseDurationMs
+            if (holdOk && notClosedRecently) {
                 alertActive = false
                 recoveringUntilMs = nowMs + config.recoveringBandMs
             }
@@ -197,8 +199,7 @@ class DrowsinessDetector(
 
     private fun discardDrowsinessEvidence() {
         closedSinceMs = null
-        openSinceMs = null
-        uncertainSinceMs = null
+        lastClosedAtMs = null
         recoveringUntilMs = null
     }
 
@@ -220,8 +221,7 @@ class DrowsinessDetector(
     fun reset() {
         state = State.AWAKE
         closedSinceMs = null
-        openSinceMs = null
-        uncertainSinceMs = null
+        lastClosedAtMs = null
         lastAlertFiredAtMs = null
         alertActive = false
         alertStartedAtMs = null

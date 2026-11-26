@@ -14,7 +14,6 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 import kotlin.math.min
 
 /** Result categories emitted per analyzed frame. */
@@ -253,7 +252,12 @@ class DrowsinessFrameAnalyzer(
 
         val verdict = when {
             pLeft == null && pRight == null -> null // both failed
-            else -> FrameVerdict(hasFace = true, pClosed = maxOf(pLeft ?: 0f, pRight ?: 0f))
+            // Agreement-aware: a single closed-looking eye cannot stand in
+            // for both (see EyeStateClassifier.combineEyes).
+            else -> FrameVerdict(
+                hasFace = true,
+                pClosed = EyeStateClassifier.combineEyes(pLeft, pRight),
+            )
         }
 
         when (verdict) {

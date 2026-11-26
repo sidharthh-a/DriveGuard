@@ -115,8 +115,31 @@ class EyeStateClassifier private constructor(
             }
         }
 
-        /** Sanity helper used by tests: max over per-eye probabilities. */
-        fun combineEyes(pLeft: Float, pRight: Float): Float = max(pLeft, pRight)
+        /**
+         * Per-eye disagreement above which the two eyes are not describing the
+         * same eye state (one crop is occluded, mis-cropped or squinting).
+         */
+        private const val EYE_AGREEMENT_MARGIN = 0.35f
+
+        /**
+         * Combines the two per-eye probabilities into the frame's P(closed).
+         *
+         * Taking the max outright made one unusable crop (hair, a hand, a
+         * reflection, a single lid caught half-down) read as a microsleep
+         * while the other eye was plainly open — the main source of false
+         * alarms. The worse eye only speaks for the frame when both eyes
+         * agree; otherwise the average lands in the hysteresis band, so no
+         * closure is recorded from a one-eyed frame.
+         *
+         * A missing eye falls back to the eye that was classified.
+         */
+        fun combineEyes(pLeft: Float?, pRight: Float?): Float {
+            if (pLeft == null) return pRight ?: 0f
+            if (pRight == null) return pLeft
+            val worse = max(pLeft, pRight)
+            val better = min(pLeft, pRight)
+            return if (worse - better <= EYE_AGREEMENT_MARGIN) worse else (worse + better) / 2f
+        }
 
         /** Sanity helper used by tests: clamp helper mirrors classify(). */
         fun clamp01(v: Float): Float = min(1f, max(0f, v))

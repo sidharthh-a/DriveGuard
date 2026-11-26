@@ -270,18 +270,44 @@ class DrowsinessDetectorTest {
     }
 
     @Test
-    fun `sustained uncertainty decays closure evidence`() {
-        var t = runClosed(0, 1_000)
-        // now the model outputs uncertain values for 600 ms (> uncertainResetMs)
+    fun `uncertain frames break an accumulated closure run`() {
+        // Regression: partial closure (half-shut lids) used to FREEZE the
+        // closure timer for 500 ms, so 1.2 s closed + 0.3 s half-closed +
+        // 0.9 s closed still fired. Now only confident closure counts.
+        var t = runClosed(0, 1_200)
         var u = t
-        while (u < t + 600) {
+        while (u < t + 300) {
             detector.update(FrameVerdict(true, 0.5f), u)
             detector.tick(u)
             u += 33
         }
-        detector.update(openFrame(), u)
-        detector.tick(u)
-        assertThat(detector.closedDurationMs(u + 1)).isEqualTo(0)
+        assertThat(detector.closedDurationMs(u)).isEqualTo(0)
+        runClosed(u, u + 900)
+        assertThat(detector.pollAlertFired()).isFalse()
+    }
+
+    @Test
+    fun `alert releases while the eyes hover in the hysteresis band`() {
+        // Regression: release used to require confidently OPEN frames, so a
+        // squinting driver kept the alert latched forever — and a latched
+        // alert blocks every later firing, which is why the alarm appeared to
+        // work exactly once.
+        var t = runClosed(0, 2_100)
+        assertThat(detector.pollAlertFired()).isTrue()
+        assertThat(detector.isAlertActive()).isTrue()
+
+        var u = t
+        while (u < t + 6_000) {
+            detector.update(FrameVerdict(true, 0.5f), u) // half-closed, not open
+            detector.tick(u)
+            u += 33
+        }
+        assertThat(detector.isAlertActive()).isFalse()
+
+        // And a fresh episode alerts again once the cooldown has elapsed.
+        var t2 = u
+        t2 = runClosed(t2, t2 + 2_100)
+        assertThat(detector.pollAlertFired()).isTrue()
     }
 
     // --- cooldown -----------------------------------------------------------------

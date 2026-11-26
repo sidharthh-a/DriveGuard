@@ -86,13 +86,6 @@ object DetectionTuning {
      */
     const val DROWSY_RELEASE_THRESHOLD_MS = 700L
 
-    /**
-     * Continuous UNCERTAIN observations (hysteresis band) decay accumulated
-     * closure evidence after this long. Time-based rather than frame-counted
-     * so behaviour is independent of the analysis frame rate.
-     */
-    const val UNCERTAIN_RESET_MS = 500L
-
     /** Post-alert stabilization band shown in the UI after an alert releases. */
     const val RECOVERING_BAND_MS = 2_000L
 
@@ -100,6 +93,15 @@ object DetectionTuning {
 
     /** Minimum time an alert stays latched before it may clear. */
     const val ALERT_HOLD_MS = 2_000L
+
+    /**
+     * ALARM_REARM_MS — how much fresh close-eye evidence re-sounds an alert
+     * that an open-eye frame silenced while the episode is still latched.
+     * Without it a single glance up ends the alarm for the rest of the
+     * episode, which reads as "the alarm stopped working". Short enough to
+     * react to a relapse, long enough that a blink does not retrigger sound.
+     */
+    const val ALARM_REARM_MS = 700L
 
     /**
      * ALERT_COOLDOWN_MS — minimum spacing between two alert firings. With the

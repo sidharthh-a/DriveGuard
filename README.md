@@ -106,7 +106,7 @@ unmodified. Forensics (direct flatbuffer parsing + desktop inference, see
 ```
 Input : float32[1,64,64,3]  RGB, [0,1], row-major, channel-last
         (crop of eye region; nearest-neighbour resize 64×64; x/255)
-Output: float32[1,1]        P(eye closed); combined across eyes via max()
+Output: float32[1,1]        P(eye closed); combined across eyes (see below)
 ```
 
 The canonical test vectors in `app/src/androidTest/assets/model_test_vectors.json`
@@ -118,31 +118,43 @@ reproduce within 1e-4.
 
 `DrowsinessDetector` is a pure, deterministic state machine (clock injected):
 
-- **Closed** frame: `P ≥ confidenceThreshold` (default 0.70; user-selectable).
+- **Eye combination** — the per-eye probabilities are combined so that one
+  unusable crop (hair, a hand, one lid caught half-down) cannot read as a
+  microsleep: if the two eyes disagree by more than 0.35 the average is used,
+  which lands in the hysteresis band. The worse eye speaks for the frame only
+  when both eyes agree.
+- **Closed** frame: `P ≥ confidenceThreshold` (default 0.85; 0.75 / 0.85 /
+  0.92 for the HIGH / MEDIUM / LOW presets). Genuine closure saturates far
+  above this, so the higher bar only discards half-closed lids and squints.
 - **Open** frame: `P ≤ openThreshold` (0.30) — the band between is *uncertain*
-  hysteresis and moves nothing.
+  hysteresis: it is not closure and it breaks an accumulated run, so hovering
+  or squinting can never accumulate toward an alert.
 - **Alert** fires after `closedDurationMs` (default 2 000 ms) of continuously
   closed eyes — never from a single frame. Reduced from the classic 3-second
   rule: 2 s keeps a ≥4× margin over the longest voluntary blink (~0.5 s)
   while halving alert latency; closures of ~1–2 s are treated as microsleeps
   in the PERCLOS-lineage drowsiness literature.
-- **Release hysteresis** — drowsiness/alert clears only after
-  `releaseDurationMs` (700 ms) of continuous *openness* (time-based, not
-  frames), so blinking while drowsy never clears the state.
+- **Release hysteresis** — drowsiness/alert clears only once no confidently
+  closed frame has been seen for `releaseDurationMs` (700 ms, time-based, not
+  frames), so blinking while drowsy never clears the state, while squinting or
+  looking around does release it (a permanently latched alert would also block
+  every later alert).
 - **Face-loss grace** — a missing face *freezes* all evidence for
   `faceLostGraceMs` (2 s) instead of resetting it; only after 5 s of sustained
   loss is the driver considered gone (and any active alert silenced).
 - **Cooldown** of 8 s between alert firings; `AlertEngine` escalates the level
   across episodes and resets after 5 clean minutes.
 - **No face** never contributes to drowsiness; sustained loss resets evidence.
-- Sustained *uncertain* frames decay accumulated evidence.
+- *Uncertain* frames neither accumulate nor extend evidence.
 
 ## Alert system
 
 `AlertEngine` maps episodes to `AlertLevel` 1→3 with cooldown suppression.
 `AlertPlayer` renders each event: escalating vibration waveforms on the alarm
 channel, and an alarm-tone playback (`RingtoneManager.TYPE_ALARM`, optional)
-requested with a proper `AudioFocusRequest` (USAGE_ALARM). Documented
+requested with a proper `AudioFocusRequest` (USAGE_ALARM). Both repeat for as
+long as the alert stays latched, are silenced the moment the eyes are seen
+open, and are re-armed if the eyes close again inside the same episode. Documented
 limitation: in silent/DND mode the platform may mute the alarm stream —
 vibration still runs; the app never bypasses DND.
 

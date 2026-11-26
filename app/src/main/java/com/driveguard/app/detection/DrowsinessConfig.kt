@@ -20,10 +20,12 @@ import com.driveguard.app.ml.EyeModelContract
 data class DrowsinessConfig(
     /**
      * P(closed) at or above which a frame is classified "eyes closed".
-     * Calibrated so the canonical closed-eye vector (0.9995) and natural
-     * partially-lit imagery fall above, while open-eye frames (~0.0) fall below.
+     * Raised from 0.70: half-closed lids and squints scored in the 0.7–0.8
+     * range on partially-lit crops and produced false alarms. A genuine
+     * closure saturates well above 0.9, so this costs no recall on real
+     * microsleeps while ignoring partially open eyes.
      */
-    val confidenceThreshold: Float = 0.70f,
+    val confidenceThreshold: Float = 0.85f,
 
     /**
      * P(closed) at or below which a frame is confidently "eyes open".
@@ -44,9 +46,6 @@ data class DrowsinessConfig(
 
     /** How long the RECOVERING UI band persists after an alert releases. */
     val recoveringBandMs: Long = DetectionTuning.RECOVERING_BAND_MS,
-
-    /** Uncertain observations decay closure evidence after this long. */
-    val uncertainResetMs: Long = DetectionTuning.UNCERTAIN_RESET_MS,
 
     /** Minimum time an alert stays latched before it may clear. */
     val alertHoldMs: Long = DetectionTuning.ALERT_HOLD_MS,

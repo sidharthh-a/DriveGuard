@@ -10,7 +10,7 @@ class SensitivityTest {
         val cfg = Sensitivity.MEDIUM.toConfig()
         assertThat(cfg.closedDurationMs).isEqualTo(DetectionTuning.DROWSY_START_THRESHOLD_MS)
         assertThat(cfg.closedDurationMs).isEqualTo(2_000)
-        assertThat(cfg.confidenceThreshold).isEqualTo(0.70f)
+        assertThat(cfg.confidenceThreshold).isEqualTo(0.85f)
     }
 
     @Test
