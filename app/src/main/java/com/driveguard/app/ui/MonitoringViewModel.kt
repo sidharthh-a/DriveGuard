@@ -22,11 +22,9 @@ import com.driveguard.app.detection.FaceTrackStatus
 import com.driveguard.app.detection.Observation
 import com.driveguard.app.detection.DetectionTuning
 import com.driveguard.app.detection.Sensitivity
-import com.driveguard.app.ml.EyeStateClassifier
 import com.driveguard.app.service.MonitoringService
 import com.driveguard.app.ui.screens.FaceState
 import com.driveguard.app.ui.screens.MonitoringUiState
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,7 +49,6 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
 
     private val detector = DrowsinessDetector()
     private val alertEngine = AlertEngine()
-    private var classifier: EyeStateClassifier? = null
     private var analyzer: DrowsinessFrameAnalyzer? = null
     private var alertPlayer: AlertPlayer? = null
 
@@ -79,17 +76,13 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var alarmSounding = false
     private val lastInferenceMs = AtomicLong(0)
 
-    /** Loads the model and settings. Reports whether the model is usable. */
+    /**
+     * Loads settings and reports readiness. There is no bundled model to load
+     * any more — ML Kit supplies the eye state — so readiness is immediate and
+     * only the user's settings have to be read.
+     */
     fun prepare(onModelReady: (Boolean) -> Unit) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                classifier = EyeStateClassifier.create(context)
-                onModelReady(true)
-            } catch (e: Exception) {
-                Log.e(TAG, "model prepare failed", e)
-                onModelReady(false)
-            }
-        }
+        onModelReady(true)
         viewModelScope.launch {
             val s = com.driveguard.app.data.SettingsRepository(context).settings.first()
             soundEnabled = s.soundEnabled
@@ -129,9 +122,7 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                     .build()
 
-                val cls = classifier ?: throw IllegalStateException("model not prepared")
                 val frameAnalyzer = DrowsinessFrameAnalyzer(
-                    classifier = cls,
                     onResult = { result -> handleFrameResult(result) },
                 )
                 analyzer = frameAnalyzer
@@ -294,8 +285,6 @@ class MonitoringViewModel(app: Application) : AndroidViewModel(app) {
         // Session persistence (if any) already handled by stop(); just free
         // hardware resources.
         analysisExecutor.shutdown()
-        classifier?.close()
-        classifier = null
     }
 
     companion object {

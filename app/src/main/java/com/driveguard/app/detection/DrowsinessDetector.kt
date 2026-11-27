@@ -3,8 +3,9 @@ package com.driveguard.app.detection
 /**
  * Minimal frame verdict from the camera/face pipeline.
  *
- * [pClosed] is the combined model output P(eye closed) across both eyes
- * (see EyeStateClassifier.combineEyes). Only meaningful when [hasFace] is true.
+ * [pClosed] is the combined eye-closure probability across both eyes — from
+ * ML Kit's per-eye openness probability (1 − openness), combined by
+ * [EyeStateClassifier.combineEyes]. Only meaningful when [hasFace] is true.
  */
 data class FrameVerdict(
     val hasFace: Boolean,

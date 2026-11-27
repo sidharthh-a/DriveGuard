@@ -15,8 +15,9 @@ accounts, no analytics and no ads.
 
 ## Features
 
-- **Real-time eye-state monitoring** — a compact CNN classifies eye crops as
-  open/closed at camera rate, with the temporal decision engine enforcing a
+- **Real-time eye-state monitoring** — ML Kit's per-eye openness probability
+  drives the eye state at camera rate (a single, calibrated signal — no second
+  classifier in the frame path), with the temporal decision engine enforcing a
   2-second continuous-closure rule before alerting (1.5–3 s selectable).
 - **Escalating alerts** — Level 1 *"Stay Alert"* → Level 2 *"Drowsiness
   Detected"* → Level 3 *"Please stop and rest"*, with visual, audible (alarm
@@ -45,11 +46,9 @@ accounts, no analytics and no ads.
 │    │  About · Privacy        MonitoringViewModel = session orchestrator             │
 │    ▼                                                                                │
 │  camera/        CameraX ImageAnalysis (KEEP_ONLY_LATEST, single-thread executor)    │
-│    │            YuvToRgbConverter (allocation-free, rotation+mirror in one pass)    │
-│    │            DrowsinessFrameAnalyzer · EyeCropGeometry                           │
+│    │            DrowsinessFrameAnalyzer (ML Kit face + openness → verdict)          │
 │    ▼                                                                                │
-│  ml/            EyeStateClassifier (LiteRT interpreter, one instance)               │
-│    │            ImageTensorPreprocessor · EyeModelContract                          │
+│  ml/            EyeStateClassifier.combineEyes (agreement-aware)                    │
 │    ▼                                                                                │
 │  detection/     DrowsinessDetector (temporal state machine) · DrowsinessConfig      │
 │    ▼            Sensitivity presets                                                 │
@@ -65,12 +64,11 @@ Frame path per analysis frame:
 
 ```
 CameraX (front camera, YUV_420_888)
-  → YuvToRgbConverter  (rotate to display orientation, mirror front lens)
   → ML Kit face detection (bundled, fast mode)
-  → EyeCropGeometry    (left/right eye ROI inside face box)
-  → ImageTensorPreprocessor (crop → 64×64 → fp32 [0,1] RGB, allocation-free)
-  → EyeStateClassifier (LiteRT, CPU/XNNPACK) → P(closed) per eye
-  → max(both eyes) → DrowsinessDetector (temporal rules) → AlertEngine → UI/alerts
+  → ML Kit eye openness → P(closed) = 1 − openness, per eye
+     (an eye ML Kit cannot score counts as open — no fallback classifier)
+  → agreement-aware combination → DrowsinessDetector (temporal rules)
+  → AlertEngine → UI/alerts
 ```
 
 ## Technology stack
@@ -80,12 +78,15 @@ CameraX (front camera, YUV_420_888)
 | Language | Kotlin 2.2, Coroutines, StateFlow |
 | UI | Jetpack Compose + Material 3, Navigation-Compose, splash screen |
 | Camera | CameraX 1.6 (Preview + ImageAnalysis, `STRATEGY_KEEP_ONLY_LATEST`) |
-| Face detection | ML Kit Face Detection 16.1 (bundled — fully offline) |
-| Inference | LiteRT 1.0.1 (`com.google.ai.edge.litert:litert`), CPU/XNNPACK |
+| Face detection & eye state | ML Kit Face Detection 16.1 (bundled — fully offline) |
 | Persistence | Room 2.8 (session history), DataStore Preferences (settings) |
 | Min / target SDK | 26 / 36 (compiled against 37 per navigation dependency) |
 
 ## Model information
+
+> The detector no longer consults the bundled model: eye state comes entirely
+> from ML Kit's openness signal (see *Drowsiness algorithm*). The model and its
+> LiteRT runtime are still packaged but are dead weight in the frame path.
 
 `app/src/main/assets/models/eye_model.tflite` (2,737,336 bytes) — supplied,
 unmodified. Forensics (direct flatbuffer parsing + desktop inference, see
@@ -118,17 +119,27 @@ reproduce within 1e-4.
 
 `DrowsinessDetector` is a pure, deterministic state machine (clock injected):
 
+- **Eye signal** — ML Kit's per-eye openness probability is converted to
+  `P(closed) = 1 − openness`. This is the signal the validated reference
+  prototype used, and the reason its alerts were stable: the probability comes
+  from the same face model that found the face, so it stays calibrated in dim
+  light, at an angle and with glasses. There is no fallback classifier behind
+  it: an eye ML Kit reports no openness for counts as open, exactly as in the
+  reference, so an unusable reading can never manufacture closure.
 - **Eye combination** — the per-eye probabilities are combined so that one
-  unusable crop (hair, a hand, one lid caught half-down) cannot read as a
+  unusable reading (hair, a hand, one lid caught half-down) cannot read as a
   microsleep: if the two eyes disagree by more than 0.35 the average is used,
   which lands in the hysteresis band. The worse eye speaks for the frame only
   when both eyes agree.
-- **Closed** frame: `P ≥ confidenceThreshold` (default 0.85; 0.75 / 0.85 /
-  0.92 for the HIGH / MEDIUM / LOW presets). Genuine closure saturates far
-  above this, so the higher bar only discards half-closed lids and squints.
-- **Open** frame: `P ≤ openThreshold` (0.30) — the band between is *uncertain*
-  hysteresis: it is not closure and it breaks an accumulated run, so hovering
-  or squinting can never accumulate toward an alert.
+- **Closed** frame: `P ≥ confidenceThreshold` (default 0.60, i.e. average eye
+  openness below 0.40 — the reference cutoff; 0.50 / 0.60 / 0.70 for the HIGH /
+  MEDIUM / LOW presets). A real closure sits well above 0.60; the previous 0.85
+  demanded openness below 0.15, which dim light and glasses routinely fail, so
+  closed eyes went undetected while partial lids still alarmed.
+- **Open** frame: `P ≤ openThreshold` (0.40, i.e. average openness at least
+  0.60) — the band between is *uncertain* hysteresis: it is not closure and it
+  breaks an accumulated run, so hovering or squinting can never accumulate
+  toward an alert.
 - **Alert** fires after `closedDurationMs` (default 2 000 ms) of continuously
   closed eyes — never from a single frame. Reduced from the classic 3-second
   rule: 2 s keeps a ≥4× margin over the longest voluntary blink (~0.5 s)
@@ -182,23 +193,21 @@ vibration still runs; the app never bypasses DND.
 
 ## Performance methodology
 
-- One LiteRT interpreter per process, reused every frame; inference on a
-  dedicated single-thread analyzer executor — never the main thread.
+- Face detection and the per-eye openness signal come from one bundled ML Kit
+  pipeline on a dedicated single-thread analyzer executor — never the main
+  thread. There is no second model to load or run per frame.
 - `STRATEGY_KEEP_ONLY_LATEST` backpressure: under load, stale frames are
   dropped; no queue growth.
-- Allocation-free steady state: reusable RGB buffer + tensor buffer; the only
-  per-frame allocation is the NV21 array required by ML Kit.
-- Measured on the validation emulator (API 36.1, SwiftShader): average
-  per-inference time is in the low milliseconds (`latencyIsMeasuredAndSane`
-  executes 25 inferences + model load in ~33 ms total); on a real device the
-  CPU path is expected to be faster. FPS/latency figures are reported, not
-  claimed.
+- Allocation-free steady state: the only per-frame allocation is the NV21
+  array required by ML Kit.
+- Per-frame analysis latency is recorded per session (`analysisMs`); no FPS
+  claim is made — figures vary with device, lighting and face size.
 
 ## Testing
 
 | Suite | Location | Count | Result |
 |---|---|---|---|
-| Unit (JVM) | `app/src/test` | 58 | ✅ all pass |
+| Unit (JVM) | `app/src/test` | 64 | ✅ all pass |
 | Instrumented (device) | `app/src/androidTest` | 13 | ✅ all pass on emulator |
 
 Coverage includes: temporal thresholds, hysteresis boundaries, alert fire
@@ -259,7 +268,7 @@ Gate status for the current tree (JDK 17, Android SDK 37):
 
 | Gate | Command | Result |
 |---|---|---|
-| JVM unit tests | `./gradlew :app:testDebugUnitTest` | 58 tests pass |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest` | 64 tests pass |
 | Android Lint (release) | `./gradlew :app:lintRelease` | 0 errors |
 | R8 + resource shrinking | `./gradlew :app:assembleRelease` | succeeds |
 | Release bundle | `./gradlew :app:bundleRelease` | `app/build/outputs/bundle/release/app-release.aab` |

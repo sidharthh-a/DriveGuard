@@ -20,18 +20,25 @@ import com.driveguard.app.ml.EyeModelContract
 data class DrowsinessConfig(
     /**
      * P(closed) at or above which a frame is classified "eyes closed".
-     * Raised from 0.70: half-closed lids and squints scored in the 0.7–0.8
-     * range on partially-lit crops and produced false alarms. A genuine
-     * closure saturates well above 0.9, so this costs no recall on real
-     * microsleeps while ignoring partially open eyes.
+     *
+     * This maps directly onto an eye-openness cutoff, because the pipeline
+     * reports P(closed) = 1 − mean(ML Kit eye-open probability) for the two
+     * eyes. 0.60 therefore means "closed when average openness drops below
+     * 0.40" — exactly the rule that was validated frame-by-frame in the
+     * reference prototype. The earlier 0.85 required average openness below
+     * 0.15, which real closures in dim light or behind glasses often never
+     * reach, so genuinely closed eyes went undetected while half-shut lids
+     * still alarmed.
      */
-    val confidenceThreshold: Float = 0.85f,
+    val confidenceThreshold: Float = 0.60f,
 
     /**
-     * P(closed) at or below which a frame is confidently "eyes open".
-     * The band between openThreshold and confidenceThreshold is hysteresis.
+     * P(closed) at or below which a frame is confidently "eyes open", i.e.
+     * average openness of at least 0.60. The band between openThreshold and
+     * confidenceThreshold is hysteresis: not closure, and it breaks an
+     * accumulated run.
      */
-    val openThreshold: Float = 0.30f,
+    val openThreshold: Float = 0.40f,
 
     /** DROWSY_START_THRESHOLD_MS: continuous closure before drowsiness. */
     val closedDurationMs: Long = DetectionTuning.DROWSY_START_THRESHOLD_MS,

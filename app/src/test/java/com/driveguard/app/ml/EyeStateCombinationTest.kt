@@ -10,6 +10,20 @@ import org.junit.Test
 class EyeStateCombinationTest {
 
     @Test
+    fun `reference openness cutoff maps to the medium threshold`() {
+        // The validated reference rule is "average eye openness < 0.40 = closed".
+        // The pipeline reports 1 - openness per eye, so that rule must land
+        // exactly on the MEDIUM preset's closed threshold.
+        val config = com.driveguard.app.detection.Sensitivity.MEDIUM.toConfig()
+
+        val partlyClosed = EyeStateClassifier.combineEyes(1f - 0.35f, 1f - 0.32f)
+        assertThat(partlyClosed).isAtLeast(config.confidenceThreshold)
+
+        val clearlyOpen = EyeStateClassifier.combineEyes(1f - 0.55f, 1f - 0.50f)
+        assertThat(clearlyOpen).isLessThan(config.confidenceThreshold)
+    }
+
+    @Test
     fun `agreeing closed eyes report the worse eye`() {
         assertThat(EyeStateClassifier.combineEyes(0.95f, 0.90f)).isEqualTo(0.95f)
     }
@@ -18,7 +32,7 @@ class EyeStateCombinationTest {
     fun `one closed eye against one open eye is not closure`() {
         val p = EyeStateClassifier.combineEyes(0.95f, 0.02f)
         assertThat(p).isGreaterThan(0.30f) // above "open"
-        assertThat(p).isLessThan(0.75f) // below every "closed" threshold
+        assertThat(p).isLessThan(0.50f) // below every "closed" threshold
     }
 
     @Test

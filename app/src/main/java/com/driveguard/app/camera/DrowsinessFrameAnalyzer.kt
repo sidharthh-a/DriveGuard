@@ -5,9 +5,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.driveguard.app.detection.DetectionTuning
 import com.driveguard.app.detection.FrameVerdict
-import com.driveguard.app.ml.EyeModelContract
 import com.driveguard.app.ml.EyeStateClassifier
-import com.driveguard.app.ml.ImageTensorPreprocessor
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
@@ -33,8 +31,8 @@ sealed interface FrameResult {
 
 /**
  * Face bounding box in UPRIGHT, MIRRORED analysis-frame coordinates — the same
- * space as the RGB buffer fed to the classifier and what the user sees in the
- * (mirrored) preview, so overlays align without extra transforms.
+ * space as what the user sees in the (mirrored) preview, so overlays align
+ * without extra transforms.
  */
 data class FaceBox(
     val left: Float,
@@ -44,7 +42,7 @@ data class FaceBox(
 )
 
 /**
- * CameraX analyzer gluing: frame → ML Kit face → eye ROI → model → verdict.
+ * CameraX analyzer gluing: frame → ML Kit face → ML Kit eye openness → verdict.
  *
  * Root-cause fixes for the historical "face not detected" flakiness:
  *
@@ -75,7 +73,6 @@ data class FaceBox(
  * Everything runs there — never on the main thread.
  */
 class DrowsinessFrameAnalyzer(
-    private val classifier: EyeStateClassifier,
     private val onResult: (FrameResult) -> Unit,
     private val frontCamera: Boolean = true,
 ) : ImageAnalysis.Analyzer {
@@ -92,10 +89,6 @@ class DrowsinessFrameAnalyzer(
             .enableTracking()
             .build(),
     )
-
-    // Reusable buffers (no per-frame allocation in steady state).
-    private var rgbBuf = IntArray(0)
-    private var tensorBuf = FloatArray(EyeModelContract.ELEMENTS_PER_FRAME)
 
     // Analyzer-level track: last good face box + consecutive missed detections.
     private var trackedBox: FaceBox? = null
@@ -137,18 +130,11 @@ class DrowsinessFrameAnalyzer(
     private fun processFrame(image: ImageProxy) {
         framesIn++
         val rotation = image.imageInfo.rotationDegrees
-        val mirror = frontCamera
 
-        // 1. Rotate/mirror YUV to upright RGB (allocation-free buffer reuse).
+        // 1. Upright canvas the face boxes are mapped into.
         val rot90 = rotation == 90 || rotation == 270
         val outW = if (rot90) image.height else image.width
         val outH = if (rot90) image.width else image.height
-        if (rgbBuf.size < outW * outH) rgbBuf = IntArray(outW * outH)
-        val ok = YuvToRgbConverter.convert(image, rgbBuf, outW, outH, rotation, mirror)
-        if (!ok) {
-            onResult(FrameResult.FrameUnsupported)
-            return
-        }
 
         // 2. Face detection — sensor-space dims + rotation tag so ML Kit
         //    uprights the frame itself (fix for the historical dimension bug).
@@ -193,7 +179,7 @@ class DrowsinessFrameAnalyzer(
         trackedBox = box
         lastFaceBox = box
 
-        classifyWithBox(box, uprightW, uprightH)
+        classifyWithBox(box, face)
     }
 
     /** Empty detection result: reuse the tracked box for a couple of misses. */
@@ -202,7 +188,7 @@ class DrowsinessFrameAnalyzer(
         if (tracked != null && missedDetections < DetectionTuning.TRACK_MAX_MISSES) {
             missedDetections++
             trackRescues++
-            classifyWithBox(tracked, trackedWidth(tracked), trackedHeight(tracked))
+            classifyWithBox(tracked, face = null)
             return
         }
         trackedBox = null
@@ -210,12 +196,6 @@ class DrowsinessFrameAnalyzer(
         noFaceFrames++
         onResult(FrameResult.NoFace)
     }
-
-    // The tracked box is reused against the last known upright canvas size;
-    // crop coordinates are clamped by the preprocessor, so stale canvas size
-    // is safe — we simply pass the box extents as the canvas.
-    private fun trackedWidth(b: FaceBox) = b.left.toInt() + b.width.toInt() + 1
-    private fun trackedHeight(b: FaceBox) = b.top.toInt() + b.height.toInt() + 1
 
     /**
      * Maps an ML Kit box (upright, un-mirrored sensor coordinates) into the
@@ -239,7 +219,7 @@ class DrowsinessFrameAnalyzer(
         )
     }
 
-    private fun classifyWithBox(box: FaceBox, w: Int, h: Int) {
+    private fun classifyWithBox(box: FaceBox, face: Face?) {
         // Reliability gate: face too small → treat as "too far" (not drowsiness).
         val minSide = min(box.width, box.height)
         if (minSide < DetectionTuning.MIN_FACE_PX) {
@@ -247,44 +227,32 @@ class DrowsinessFrameAnalyzer(
             return
         }
 
-        val pLeft = classifyEye(box, w, h, leftEye = true)
-        val pRight = classifyEye(box, w, h, leftEye = false)
+        // Eye state comes from ML Kit's own per-eye openness classifier: it is
+        // trained on the same face crops the detector found, so its calibration
+        // holds across lighting and glasses — the reason the reference build
+        // alerted correctly. There is no fallback classifier behind it: a face
+        // ML Kit cannot score has no closure evidence, so that frame reads as
+        // open instead of being guessed at from an uncalibrated crop.
+        val pLeft = closedProbability(face?.leftEyeOpenProbability)
+        val pRight = closedProbability(face?.rightEyeOpenProbability)
 
-        val verdict = when {
-            pLeft == null && pRight == null -> null // both failed
-            // Agreement-aware: a single closed-looking eye cannot stand in
-            // for both (see EyeStateClassifier.combineEyes).
-            else -> FrameVerdict(
-                hasFace = true,
-                pClosed = EyeStateClassifier.combineEyes(pLeft, pRight),
-            )
-        }
-
-        when (verdict) {
-            null -> {
-                classifyFailures++
-                onResult(FrameResult.ClassifierFailed)
-            }
-            else -> onResult(FrameResult.Processed(verdict, box))
-        }
-        logThrottled(box, verdict?.pClosed)
+        // Agreement-aware: a single closed-looking eye cannot stand in for
+        // both (see EyeStateClassifier.combineEyes).
+        val verdict = FrameVerdict(
+            hasFace = true,
+            pClosed = EyeStateClassifier.combineEyes(pLeft, pRight),
+        )
+        onResult(FrameResult.Processed(verdict, box))
+        logThrottled(box, verdict.pClosed)
     }
 
-    /** Returns P(closed) for one eye, or null if the crop could not be classified. */
-    private fun classifyEye(box: FaceBox, w: Int, h: Int, leftEye: Boolean): Float? {
-        return try {
-            val crop = EyeCropGeometry.eyeCrop(
-                box.left.toInt(), box.top.toInt(),
-                box.width.toInt(), box.height.toInt(),
-                leftEye,
-            )
-            ImageTensorPreprocessor.fillTensor(rgbBuf, w, h, crop.x, crop.y, crop.w, crop.h, tensorBuf)
-            classifier.classify(tensorBuf)
-        } catch (e: EyeStateClassifier.ModelInferenceException) {
-            Log.w(TAG, "eye classification failed", e)
-            null
-        }
-    }
+    /**
+     * Converts ML Kit's P(eye open) into the pipeline's P(closed). A null
+     * probability means ML Kit has no opinion on that eye — treated as open,
+     * exactly like the reference prototype, so it cannot invent closure.
+     */
+    private fun closedProbability(openProbability: Float?): Float =
+        openProbability?.let { (1f - it).coerceIn(0f, 1f) } ?: 0f
 
     /**
      * Compact pipeline trace (Camera frame → preprocess → face detect →
