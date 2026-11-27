@@ -11,7 +11,6 @@ navigationCompose = "2.10.1"
 datastore = "1.2.1"
 room = "2.8.5"
 camerax = "1.6.2"
-litert = "1.0.1"
 mlkitFace = "16.1.7"
 coroutines = "1.11.0"
 junit = "4.13.2"
@@ -49,7 +48,6 @@ camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = 
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
-litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFace" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

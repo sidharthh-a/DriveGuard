@@ -43,10 +43,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // LiteRT 1.0.1 ships a 4 KB-aligned x86_64 JNI library, which Play
-            // rejects for apps targeting API 35+ on 16 KB-page devices. Ship
-            // the 64-bit ARM ABI (every phone) plus 32-bit ARM; debug builds
-            // keep all ABIs so x86_64 emulators still install.
+            // Ship only the ARM ABIs every phone uses, to keep the bundle
+            // small; debug builds keep all ABIs so x86_64 emulators install.
             ndk {
                 abiFilters += listOf("arm64-v8a", "armeabi-v7a")
             }
@@ -126,7 +124,6 @@ dependencies {
     implementation(libs.camerax.view)
 
     // ML
-    implementation(libs.litert)
     implementation(libs.mlkit.face.detection)
 
     // Coroutines

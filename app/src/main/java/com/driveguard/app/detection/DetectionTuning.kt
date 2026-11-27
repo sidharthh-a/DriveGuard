@@ -6,7 +6,7 @@ package com.driveguard.app.detection
  * Every temporal value here is injected into [DrowsinessConfig] / the frame
  * analyzer so no magic numbers are scattered through the code. Rationale for
  * each value is documented inline; the defaults are evidence-based, not
- * arbitrary (see docs/MODEL_CONTRACT.md §6 for the model-side calibration).
+ * arbitrary.
  */
 object DetectionTuning {
 
@@ -112,8 +112,8 @@ object DetectionTuning {
 
     /**
      * Desired analysis period (~15 Hz). NOT enforced as a frame gate: on
-     * current hardware the full pipeline (YUV→RGB + face detection + 2 eye
-     * classifications) already runs in 20–30 ms, and only one detection cycle
+     * current hardware the full pipeline (NV21 conversion + face detection
+     * with per-eye openness) already runs in 20–30 ms, and only one detection cycle
      * is ever in flight — surplus camera frames are dropped by
      * STRATEGY_KEEP_ONLY_LATEST instead of queueing. Kept as the documented
      * budget and for tests/tools.

@@ -1,6 +1,5 @@
 package com.driveguard.app.detection
 
-import com.driveguard.app.ml.EyeModelContract
 
 /**
  * Tunables for [DrowsinessDetector]. All defaults come from
@@ -71,9 +70,6 @@ data class DrowsinessConfig(
      * crops to be considered reliable; smaller faces degrade to "too far".
      */
     val minFaceFraction: Float = 0.18f,
-
-    /** Derived from the model contract; kept here to avoid magic numbers in tests. */
-    val modelInputSize: Int = EyeModelContract.INPUT_WIDTH,
 ) {
     init {
         require(openThreshold < confidenceThreshold) {

@@ -9,7 +9,7 @@ accounts, no analytics and no ads.
 > **Safety disclaimer.** DriveGuard is an assistance tool, not a safety system.
 > It does not replace responsible driving, adequate rest, or professional
 > driver-monitoring systems. It can miss events or raise false alerts. No
-> accuracy claim is made for the bundled model.
+> accuracy claim is made for the eye-state signal.
 
 ---
 
@@ -22,7 +22,7 @@ accounts, no analytics and no ads.
 - **Escalating alerts** — Level 1 *"Stay Alert"* → Level 2 *"Drowsiness
   Detected"* → Level 3 *"Please stop and rest"*, with visual, audible (alarm
   stream + audio focus) and vibratory output, cooldown and hysteresis.
-- **Face-aware pipeline** — ML Kit face detection gates the classifier;
+- **Face-aware pipeline** — ML Kit face detection gates the eye-state signal;
   analyzer-level tracking bridges brief detection gaps, a 2 s grace window
   freezes evidence across short occlusions, and the UI distinguishes
   *Face detected / Temporarily lost / Not detected*.
@@ -81,39 +81,6 @@ CameraX (front camera, YUV_420_888)
 | Face detection & eye state | ML Kit Face Detection 16.1 (bundled — fully offline) |
 | Persistence | Room 2.8 (session history), DataStore Preferences (settings) |
 | Min / target SDK | 26 / 36 (compiled against 37 per navigation dependency) |
-
-## Model information
-
-> The detector no longer consults the bundled model: eye state comes entirely
-> from ML Kit's openness signal (see *Drowsiness algorithm*). The model and its
-> LiteRT runtime are still packaged but are dead weight in the frame path.
-
-`app/src/main/assets/models/eye_model.tflite` (2,737,336 bytes) — supplied,
-unmodified. Forensics (direct flatbuffer parsing + desktop inference, see
-[`docs/MODEL_CONTRACT.md`](docs/MODEL_CONTRACT.md)) established:
-
-- **Architecture**: 3× [Conv2D 3×3 + ReLU → MaxPool 2×2] (32/64/128 ch) →
-  Flatten → Dense(4608→128, ReLU) → Dense(128→1) → Sigmoid. **683,329
-  parameters**, all float32 — no quantization.
-- **Input**: `[1, 64, 64, 3]` fp32, RGB, range `[0, 1]` (divide by 255), upright crop.
-- **Output**: `[1, 1]` fp32 = **P(eye closed)** — polarity verified empirically
-  (sliding-window activation on a closed-eye probe image saturates at 1.0 on
-  the eyes; Haar-verified open eyes read ≈ 0).
-- **No metadata buffer**: training dataset, author and license are unknown;
-  therefore the app documents, and makes, **no accuracy claims**.
-
-### Model contract (summary)
-
-```
-Input : float32[1,64,64,3]  RGB, [0,1], row-major, channel-last
-        (crop of eye region; nearest-neighbour resize 64×64; x/255)
-Output: float32[1,1]        P(eye closed); combined across eyes (see below)
-```
-
-The canonical test vectors in `app/src/androidTest/assets/model_test_vectors.json`
-(inputs + TensorFlow-2.21-generated expected outputs) are executed **on-device**
-by `ModelInstrumentedTest` to prove the contract end-to-end; all 9 vectors
-reproduce within 1e-4.
 
 ## Drowsiness algorithm
 
@@ -207,14 +174,13 @@ vibration still runs; the app never bypasses DND.
 
 | Suite | Location | Count | Result |
 |---|---|---|---|
-| Unit (JVM) | `app/src/test` | 64 | ✅ all pass |
-| Instrumented (device) | `app/src/androidTest` | 13 | ✅ all pass on emulator |
+| Unit (JVM) | `app/src/test` | 52 | ✅ all pass |
+| Instrumented (device) | `app/src/androidTest` | 11 | ✅ all pass on emulator |
 
 Coverage includes: temporal thresholds, hysteresis boundaries, alert fire
 timing, cooldown, recovery, face-loss semantics, reset; alert escalation and
-suppression; sensitivity presets; preprocessing (normalization, clamping,
-layout); geometry; formatting; and **on-device model verification against the
-canonical vectors**, plus end-to-end synthetic frame flows (sustained closure →
+suppression; sensitivity presets; agreement-aware eye combination; formatting;
+end-to-end synthetic frame flows (sustained closure →
 alert emission, intermittent closure → no alert, no-face → no alert, recovery
 flow) and launch/recreation smoke tests. `MonitoringViewModelLifecycleTest`
 (Robolectric) pins two session-lifecycle regressions: the alert player is
@@ -257,10 +223,8 @@ For local smoke-testing you may point `DG_STORE_FILE` at the debug keystore
 
 ### R8 / shrinking notes
 
-`proguard-rules.pro` keeps LiteRT's JNI surface and disables renaming of ML
-Kit's internals (its Dagger graph resolves reflectively at startup; renaming
-breaks `MlKitInitProvider`). The bundled `.tflite` assets survive shrinking
-(verified in the release APK/AAB and by the on-device vector test).
+`proguard-rules.pro` disables renaming of ML Kit's internals (its Dagger graph
+resolves reflectively at startup; renaming breaks `MlKitInitProvider`).
 
 ## Release readiness
 
@@ -268,18 +232,16 @@ Gate status for the current tree (JDK 17, Android SDK 37):
 
 | Gate | Command | Result |
 |---|---|---|
-| JVM unit tests | `./gradlew :app:testDebugUnitTest` | 64 tests pass |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest` | 52 tests pass |
 | Android Lint (release) | `./gradlew :app:lintRelease` | 0 errors |
 | R8 + resource shrinking | `./gradlew :app:assembleRelease` | succeeds |
 | Release bundle | `./gradlew :app:bundleRelease` | `app/build/outputs/bundle/release/app-release.aab` |
 | 16 KB page alignment | `zipalign -c -P 16 -v 4 <apk>` + `./scripts/check-release-permissions.sh` (libraries in the AAB) | pass (APK and AAB) |
 | No network permission | `./scripts/check-release-permissions.sh` | pass (manifest, APK and AAB) |
 
-Release artifacts ship `arm64-v8a` and `armeabi-v7a` only. LiteRT 1.0.1 binds
-an `x86_64` JNI library that is 4 KB-aligned, which Play rejects for apps
-targeting API 35+ on 16 KB-page devices; debug builds keep every ABI so
-x86_64 emulators still install. Upgrading LiteRT to a release with 16 KB-aligned
-x86_64 binaries would let that filter be removed.
+Release artifacts ship `arm64-v8a` and `armeabi-v7a` only, the ABIs every phone
+uses, to keep the bundle small; debug builds keep every ABI so x86_64 emulators
+still install.
 
 `.github/workflows/android.yml` runs the unit tests, lint, the unsigned release
 build and the release gate on every push and pull request. The gate
@@ -293,8 +255,8 @@ The same gate parses the ELF program headers of every native library inside the
 release AAB and fails if a 64-bit library has a `PT_LOAD` segment aligned below
 16384 bytes: Play builds the 16 KB-page variant from the AAB, so an unaligned
 library there is just as fatal as one in the APK. 32-bit libraries are printed
-for review but not failed — 32-bit devices use 4 KB pages, and LiteRT's
-`armeabi-v7a` binaries are legitimately aligned to 0x1000.
+for review but not failed — 32-bit devices use 4 KB pages, and 32-bit native
+libraries are legitimately aligned to 0x1000.
 
 Remaining owner actions before upload:
 
@@ -302,7 +264,6 @@ Remaining owner actions before upload:
   otherwise unsigned — verify with `keytool -printcert -jarfile app-release.aab`);
 - a real contact email and a publicly hosted privacy-policy URL (the policy in
   `playstore/PRIVACY_POLICY.md` still contains a placeholder);
-- clarification of the bundled model's provenance and licence;
 - a real-device validation pass — the instrumented suite needs a device or
   emulator, which none of the checks above cover.
 
@@ -315,8 +276,8 @@ Remaining owner actions before upload:
 
 ## Limitations
 
-- The bundled model's provenance is unknown; no accuracy/sensitivity/specificity
-  is claimed or implied. Users should validate behaviour in their own conditions.
+- No accuracy/sensitivity/specificity is claimed or implied; validate behaviour
+  in your own conditions.
 - Performance depends on lighting, camera angle, glasses/sunglasses and face
   visibility; small or off-center faces degrade to "move closer" guidance.
 - Alert sound may be suppressed by silent mode / DND (vibration unaffected).
@@ -339,5 +300,4 @@ Remaining owner actions before upload:
 ## License
 
 Project source is provided for portfolio/educational use; see
-[`LICENSE`](LICENSE). The bundled model is used as supplied; its licensing
-terms are unknown (documented above).
+[`LICENSE`](LICENSE).

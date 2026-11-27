@@ -56,15 +56,14 @@ fun AboutScreen(appVersion: String) {
         )
 
         Spacer(Modifier.height(28.dp))
-        SectionLabel("Detection model")
+        SectionLabel("Detection")
         Spacer(Modifier.height(8.dp))
         SectionCard {
             Text(
-                "A compact convolutional neural network (683,329 parameters, " +
-                    "2.6 MB) classifies each eye crop as open or closed, 64×64 " +
-                    "RGB, running fully on-device via LiteRT. Output is the " +
-                    "probability that the eye is closed. See the project " +
-                    "documentation for the full model contract.",
+                "Google ML Kit's bundled face model locates your face and " +
+                    "reports an openness probability for each eye, entirely " +
+                    "on-device. A reading ML Kit cannot provide counts as open, " +
+                    "and closure is only confirmed once both eyes agree.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -75,7 +74,7 @@ fun AboutScreen(appVersion: String) {
         Spacer(Modifier.height(8.dp))
         SectionCard {
             Text(
-                "Jetpack Compose, CameraX, ML Kit and LiteRT.",
+                "Jetpack Compose, CameraX and Google ML Kit.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -91,7 +90,7 @@ fun AboutScreen(appVersion: String) {
                     "face visibility.\n" +
                     "Alerts can be missed or false; never rely on it as your only " +
                     "safeguard against fatigue.\n" +
-                    "No accuracy metric is claimed for the supplied model; " +
+                    "No accuracy metric is claimed for the eye-state signal; " +
                     "validate behaviour in your own conditions.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

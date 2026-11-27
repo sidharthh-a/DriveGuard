@@ -1,12 +1,3 @@
-# --- TensorFlow Lite / LiteRT ---------------------------------------------
-# The interpreter loads the model through JNI and reflects on tensor metadata.
--keep class org.tensorflow.lite.** { *; }
--keep class com.google.ai.edge.litert.** { *; }
--keepclassmembers class * extends org.tensorflow.lite.NativeInterpreterWrapper { *; }
-
-# Keep the bundled model asset intact through resource shrinking.
--keep class com.driveguard.app.ml.** { *; }
-
 # --- ML Kit face detection --------------------------------------------------
 # ML Kit builds its internal Dagger graph by reflecting over renamed classes;
 # R8 renaming breaks dependency resolution at MlKitInitProvider startup

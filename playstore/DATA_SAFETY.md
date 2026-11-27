@@ -59,8 +59,8 @@ transmitted (no INTERNET permission). Answer "No" to collection.
   release AAB that is uploaded to Play, and it also verifies 16 KB-page
   alignment of the native libraries inside that AAB.
 - Release build is 16 KB-page compatible: `zipalign -c -P 16 -v 4` passes and
-  every shipped 64-bit library has `p_align >= 16384` (LiteRT's `x86_64` binary
-  does not, so release artifacts ship `arm64-v8a` + `armeabi-v7a`). CI enforces
+  every shipped 64-bit library has `p_align >= 16384` (release artifacts ship
+  only `arm64-v8a` + `armeabi-v7a`). CI enforces
   this on the artifact Play actually receives: `scripts/check-release-permissions.sh`
   fails if any 64-bit library in the release AAB has a `PT_LOAD` segment aligned
   below 16384 bytes.

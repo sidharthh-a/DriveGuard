@@ -260,7 +260,7 @@ done
 # readelf/llvm-readelf, which are not part of the Android SDK and are absent on
 # some developer machines. 32-bit ABIs are reported but not failed: 32-bit
 # devices always use 4 KB pages, and their libraries are legitimately aligned
-# to 0x1000 (as LiteRT's armeabi-v7a binaries are).
+# to 0x1000 (as ML Kit's 32-bit native libraries are).
 PAGE_16K=16384
 lib_index=0
 for aab in "${AABS[@]}"; do
@@ -280,7 +280,7 @@ for aab in "${AABS[@]}"; do
         [[ -n "$lib" ]] && libs+=("$lib")
     done < <(find "$lib_dir" -type f -name '*.so' | sort)
     if [[ "${#libs[@]}" -eq 0 ]]; then
-        fail "No native libraries found in $aab. This app ships LiteRT and ML Kit libraries, so an empty result means the bundle layout changed and the alignment check would pass vacuously."
+        fail "No native libraries found in $aab. This app ships ML Kit native libraries, so an empty result means the bundle layout changed and the alignment check would pass vacuously."
     fi
 
     if ! alignment_report="$(

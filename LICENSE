@@ -23,7 +23,4 @@ SOFTWARE.
 ---
 
 Third-party components are governed by their own licenses (AndroidX, Compose,
-CameraX, ML Kit, LiteRT — Apache 2.0). The bundled eye-state model
-(`app/src/main/assets/models/eye_model.tflite`) is included as supplied; its
-provenance and licensing terms are unknown and are documented in
-docs/MODEL_CONTRACT.md.
+CameraX, ML Kit — Apache 2.0).
